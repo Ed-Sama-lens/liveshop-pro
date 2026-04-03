@@ -36,7 +36,17 @@ export interface AnalyticsJobData {
   readonly eventData: Record<string, unknown>;
 }
 
-export type AnyJobData = OrderJobData | MessageJobData | InventoryJobData | AnalyticsJobData;
+export interface ReservationExpiryJobData {
+  readonly type: 'reservation:expire';
+  readonly shopId: string;
+}
+
+export type AnyJobData =
+  | OrderJobData
+  | MessageJobData
+  | InventoryJobData
+  | AnalyticsJobData
+  | ReservationExpiryJobData;
 
 export function isOrderJob(data: AnyJobData): data is OrderJobData {
   return data.type.startsWith('order:');
@@ -52,4 +62,8 @@ export function isInventoryJob(data: AnyJobData): data is InventoryJobData {
 
 export function isAnalyticsJob(data: AnyJobData): data is AnalyticsJobData {
   return data.type.startsWith('analytics:');
+}
+
+export function isReservationExpiryJobData(data: AnyJobData): data is ReservationExpiryJobData {
+  return data.type === 'reservation:expire';
 }
