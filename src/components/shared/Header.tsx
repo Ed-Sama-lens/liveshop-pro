@@ -34,13 +34,13 @@ export function Header({ user }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={user.image || undefined} alt={user.name} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-            </Button>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" className="relative h-9 w-9 rounded-full" />}
+          >
+            <Avatar className="h-9 w-9">
+              <AvatarImage src={user.image || undefined} alt={user.name} />
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="flex items-center gap-2 px-2 py-1.5">

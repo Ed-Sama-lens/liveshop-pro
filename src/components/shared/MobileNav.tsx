@@ -17,10 +17,10 @@ export function MobileNav({ userRole }: MobileNavProps) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open menu">
-          <Menu className="h-5 w-5" />
-        </Button>
+      <SheetTrigger
+        render={<Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open menu" />}
+      >
+        <Menu className="h-5 w-5" />
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
         <SheetTitle className="flex h-16 items-center px-6 border-b">

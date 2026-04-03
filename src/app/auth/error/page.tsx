@@ -13,11 +13,11 @@ export default function AuthErrorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button asChild className="w-full">
-            <Link href="/auth/sign-in">Try again</Link>
+          <Button render={<Link href="/auth/sign-in" />} className="w-full">
+            Try again
           </Button>
-          <Button asChild variant="outline" className="w-full">
-            <Link href="/dashboard">Go to Dashboard</Link>
+          <Button render={<Link href="/dashboard" />} variant="outline" className="w-full">
+            Go to Dashboard
           </Button>
         </CardContent>
       </Card>

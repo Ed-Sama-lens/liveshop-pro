@@ -6,7 +6,8 @@ import { logger } from '@/lib/logging/logger';
 import type { UserRole } from './types';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- version mismatch between @auth/prisma-adapter and @auth/core
+  adapter: PrismaAdapter(prisma) as any,
   providers: [
     Facebook({
       clientId: process.env.FACEBOOK_CLIENT_ID!,
