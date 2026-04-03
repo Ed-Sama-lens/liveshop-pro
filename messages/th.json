@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "dashboard": "แดชบอร์ด",
+    "analytics": "วิเคราะห์",
+    "orders": "คำสั่งซื้อ",
+    "liveSelling": "ไลฟ์สด",
+    "chat": "แชท",
+    "inventory": "คลังสินค้า",
+    "customers": "ลูกค้า",
+    "shipping": "จัดส่ง",
+    "settings": "ตั้งค่า"
+  },
+  "auth": {
+    "signIn": "เข้าสู่ระบบ",
+    "signOut": "ออกจากระบบ",
+    "continueWithFacebook": "ดำเนินการต่อด้วย Facebook",
+    "signInDescription": "เข้าสู่ระบบเพื่อจัดการร้านค้าไลฟ์สดของคุณ",
+    "accessDenied": "ไม่มีสิทธิ์เข้าถึง",
+    "accessDeniedDescription": "คุณไม่มีสิทธิ์ดูหน้านี้",
+    "signInFailed": "เข้าสู่ระบบไม่สำเร็จ",
+    "tryAgain": "ลองอีกครั้ง",
+    "goToDashboard": "ไปที่แดชบอร์ด"
+  },
+  "theme": {
+    "light": "สว่าง",
+    "dark": "มืด",
+    "system": "ระบบ",
+    "toggle": "เปลี่ยนธีม"
+  },
+  "common": {
+    "loading": "กำลังโหลด...",
+    "error": "เกิดข้อผิดพลาด",
+    "retry": "ลองใหม่",
+    "cancel": "ยกเลิก",
+    "save": "บันทึก",
+    "delete": "ลบ",
+    "confirm": "ยืนยัน",
+    "close": "ปิด"
+  }
+}

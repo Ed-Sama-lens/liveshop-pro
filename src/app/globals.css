@@ -128,3 +128,7 @@
     @apply font-sans;
   }
 }
+
+:lang(zh) {
+  font-family: var(--font-noto-sans-sc), sans-serif;
+}

@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "analytics": "Analytics",
+    "orders": "Orders",
+    "liveSelling": "Live Selling",
+    "chat": "Chat",
+    "inventory": "Inventory",
+    "customers": "Customers",
+    "shipping": "Shipping",
+    "settings": "Settings"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "continueWithFacebook": "Continue with Facebook",
+    "signInDescription": "Sign in to manage your live shop",
+    "accessDenied": "Access Denied",
+    "accessDeniedDescription": "You do not have permission to view this page.",
+    "signInFailed": "Sign In Failed",
+    "tryAgain": "Try again",
+    "goToDashboard": "Go to Dashboard"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "toggle": "Toggle theme"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "close": "Close"
+  }
+}

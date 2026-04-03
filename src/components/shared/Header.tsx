@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MobileNav } from './MobileNav';
+import { ThemeToggle } from './ThemeToggle';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import type { SessionUser } from '@/lib/auth/types';
 
 interface HeaderProps {
@@ -33,6 +35,8 @@ export function Header({ user }: HeaderProps) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-2">
+        <LanguageSwitcher />
+        <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<Button variant="ghost" className="relative h-9 w-9 rounded-full" />}

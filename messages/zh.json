@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "dashboard": "仪表盘",
+    "analytics": "数据分析",
+    "orders": "订单",
+    "liveSelling": "直播销售",
+    "chat": "聊天",
+    "inventory": "库存",
+    "customers": "客户",
+    "shipping": "物流",
+    "settings": "设置"
+  },
+  "auth": {
+    "signIn": "登录",
+    "signOut": "退出",
+    "continueWithFacebook": "使用 Facebook 继续",
+    "signInDescription": "登录以管理您的直播商店",
+    "accessDenied": "拒绝访问",
+    "accessDeniedDescription": "您无权查看此页面。",
+    "signInFailed": "登录失败",
+    "tryAgain": "重试",
+    "goToDashboard": "前往仪表盘"
+  },
+  "theme": {
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "toggle": "切换主题"
+  },
+  "common": {
+    "loading": "加载中...",
+    "error": "出现错误",
+    "retry": "重试",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "confirm": "确认",
+    "close": "关闭"
+  }
+}
