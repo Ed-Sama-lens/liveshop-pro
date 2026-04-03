@@ -1,0 +1,23 @@
+{
+  "project_name": "LiveShop Pro",
+  "created": "2026-04-03",
+  "workflow": {
+    "tdd": true,
+    "min_coverage": 80,
+    "commit_style": "conventional",
+    "review_before_merge": true
+  },
+  "tech": {
+    "frontend": "next.js",
+    "backend": "node.js",
+    "database": "postgresql",
+    "cache": "redis",
+    "orm": "prisma",
+    "ui": "shadcn",
+    "testing": "vitest"
+  },
+  "phases": {
+    "total": 8,
+    "current": 0
+  }
+}
