@@ -38,6 +38,7 @@ export type CreateProductInput = z.infer<typeof createProductSchema>;
 
 export const updateProductSchema = createProductSchema
   .omit({ variants: true })
+  .extend({ images: z.array(z.string().url()).optional() })
   .partial();
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
