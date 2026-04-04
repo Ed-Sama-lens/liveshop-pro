@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.github
+.env
+.env.local
+.env.*.local
+coverage
+tests
+*.md
+.vscode
+.DS_Store
+public/uploads

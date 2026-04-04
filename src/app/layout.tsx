@@ -3,6 +3,7 @@ import { Inter, Noto_Sans_SC } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
+import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin', 'latin-ext'] });
@@ -31,6 +32,7 @@ export default async function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NextIntlClientProvider messages={messages}>
             {children}
+            <Toaster richColors position="top-right" />
           </NextIntlClientProvider>
         </ThemeProvider>
       </body>

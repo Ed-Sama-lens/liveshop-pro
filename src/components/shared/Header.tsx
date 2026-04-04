@@ -14,6 +14,7 @@ import {
 import { MobileNav } from './MobileNav';
 import { ThemeToggle } from './ThemeToggle';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { NotificationBell } from '@/components/notification/NotificationBell';
 import type { SessionUser } from '@/lib/auth/types';
 
 interface HeaderProps {
@@ -36,6 +37,7 @@ export function Header({ user }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         <LanguageSwitcher />
+        <NotificationBell />
         <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger

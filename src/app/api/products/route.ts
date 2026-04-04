@@ -5,6 +5,7 @@ import { toAppError } from '@/lib/errors';
 import { validateBody, validateQuery } from '@/lib/validation/middleware';
 import { createProductSchema, productQuerySchema } from '@/lib/validation/product.schemas';
 import { productRepository } from '@/server/repositories/product.repository';
+import { logProductCreated } from '@/server/services/activity.service';
 
 // GET /api/products — list products with pagination
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -50,6 +51,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if ('error' in bodyResult) return bodyResult.error;
 
     const product = await productRepository.create(user.shopId, bodyResult.data);
+
+    // Activity log (non-blocking)
+    logProductCreated(user.shopId, user.id, user.name, product.name, product.id).catch(() => {});
 
     return NextResponse.json(ok(product), { status: 201 });
   } catch (err) {

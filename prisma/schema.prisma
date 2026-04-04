@@ -100,6 +100,7 @@ model Shop {
   name           String
   facebookPageId String?  @unique
   facebookToken  String?  @db.Text // AES-256-GCM encrypted
+  defaultCurrency String  @default("THB")
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -529,16 +530,130 @@ model CartItem {
   @@index([cartId])
 }
 
+// ─── Notifications ────────────────────────────────────────────────────────
+
+model Notification {
+  id        String             @id @default(cuid())
+  shopId    String
+  userId    String?
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean            @default(false)
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  @@index([shopId, isRead])
+  @@index([shopId, createdAt])
+  @@index([userId, isRead])
+}
+
+enum NotificationType {
+  NEW_ORDER
+  LOW_STOCK
+  NEW_CHAT
+  SHIPMENT_UPDATE
+  PAYMENT_RECEIVED
+  SYSTEM
+}
+
+// ─── Webhooks ─────────────────────────────────────────────────────────────
+
+model Webhook {
+  id        String         @id @default(cuid())
+  shopId    String
+  url       String
+  secret    String
+  events    String[]
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  logs WebhookLog[]
+
+  @@index([shopId])
+  @@index([shopId, isActive])
+}
+
+model WebhookLog {
+  id          String   @id @default(cuid())
+  webhookId   String
+  event       String
+  payload     Json
+  statusCode  Int?
+  response    String?  @db.Text
+  success     Boolean  @default(false)
+  attempts    Int      @default(1)
+  error       String?
+  createdAt   DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([webhookId, createdAt])
+}
+
 model ShopBranding {
-  id           String   @id @default(cuid())
-  shopId       String   @unique
-  logo         String?
-  banner       String?
-  primaryColor String?
-  accentColor  String?
-  description  String?  @db.Text
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  shopId          String   @unique
+  logo            String?
+  banner          String?
+  primaryColor    String?
+  accentColor     String?
+  description     String?  @db.Text
+  // Payment config
+  promptpayQrUrl  String?
+  promptpayNote   String?  @db.Text
+  bankName        String?
+  bankAccount     String?
+  bankAccountName String?
+  bankNote        String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+// ─── Activity Log ─────────────────────────────────────────────────────────
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  shopId      String
+  userId      String?
+  userName    String?
+  action      String
+  entity      String
+  entityId    String?
+  description String
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([shopId, createdAt])
+  @@index([shopId, entity])
+  @@index([userId])
+}
+
+// ─── Exchange Rates ──────────���───────────────────────────────────────────
+
+model ExchangeRate {
+  id             String   @id @default(cuid())
+  baseCurrency   String
+  targetCurrency String
+  rate           Decimal  @db.Decimal(12, 6)
+  date           DateTime @db.Date
+  source         String   @default("manual")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([baseCurrency, targetCurrency, date])
+  @@index([baseCurrency, targetCurrency])
+  @@index([date])
+}
+
+enum Currency {
+  THB
+  MYR
+  SGD
 }

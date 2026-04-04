@@ -17,6 +17,7 @@ const envSchema = z.object({
   FACEBOOK_APP_ID: z.string().optional().default(''),
   FACEBOOK_APP_SECRET: z.string().optional().default(''),
   FACEBOOK_WEBHOOK_VERIFY_TOKEN: z.string().optional().default(''),
+  FACEBOOK_PAGE_ACCESS_TOKEN: z.string().optional().default(''),
 
   // Token Encryption
   TOKEN_ENCRYPTION_KEY: z.string().length(64, 'TOKEN_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
