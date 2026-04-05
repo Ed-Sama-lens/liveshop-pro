@@ -23,6 +23,9 @@ export async function proxy(request: NextRequest) {
     if (intlResponse && intlResponse.status !== 200) return intlResponse;
   }
 
+  // API routes have their own auth via requireAuth() — skip middleware RBAC
+  if (pathname.startsWith('/api/')) return NextResponse.next();
+
   // Strip locale prefix for RBAC checks
   const pathWithoutLocale = pathname.replace(/^\/(en|th|zh)/, '') || '/';
 
