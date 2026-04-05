@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale } from 'next-intl';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,16 +17,17 @@ const LOCALE_LABELS: Record<string, string> = {
   zh: '中文',
 };
 
+/**
+ * Cookie-based locale switcher — no URL prefix needed.
+ * Sets NEXT_LOCALE cookie and refreshes to apply.
+ */
 export function LanguageSwitcher() {
   const locale = useLocale();
   const router = useRouter();
-  const pathname = usePathname();
 
   function switchLocale(newLocale: string) {
-    const pathWithoutLocale = pathname.replace(/^\/(en|th|zh)/, '') || '/';
-    const newPath =
-      newLocale === 'en' ? pathWithoutLocale : `/${newLocale}${pathWithoutLocale}`;
-    router.push(newPath);
+    document.cookie = `NEXT_LOCALE=${newLocale};path=/;max-age=31536000;SameSite=Lax`;
+    router.refresh();
   }
 
   return (

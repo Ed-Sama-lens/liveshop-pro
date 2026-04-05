@@ -26,24 +26,21 @@ export async function proxy(request: NextRequest) {
   // API routes have their own auth via requireAuth() — skip middleware RBAC
   if (pathname.startsWith('/api/')) return NextResponse.next();
 
-  // Strip locale prefix for RBAC checks
-  const pathWithoutLocale = pathname.replace(/^\/(en|th|zh)/, '') || '/';
-
-  if (isPublicPath(pathWithoutLocale)) return NextResponse.next();
+  if (isPublicPath(pathname)) return NextResponse.next();
 
   const session = await auth();
 
   if (!session?.user) {
     const signInUrl = new URL('/auth/sign-in', request.url);
-    signInUrl.searchParams.set('callbackUrl', pathWithoutLocale);
+    signInUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(signInUrl);
   }
 
-  const { allowed, reason } = canAccess(pathWithoutLocale, session.user.role);
+  const { allowed, reason } = canAccess(pathname, session.user.role);
 
   if (!allowed) {
     logger.warn(
-      { userId: session.user.id, role: session.user.role, pathname: pathWithoutLocale, reason },
+      { userId: session.user.id, role: session.user.role, pathname, reason },
       '[RBAC] Access denied',
     );
     return NextResponse.redirect(new URL('/unauthorized', request.url));
