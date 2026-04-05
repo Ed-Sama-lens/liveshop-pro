@@ -60,7 +60,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       },
       {
         label: 'Live Selling',
-        href: '/live',
+        href: '/live-selling',
         icon: Radio,
         roles: ['OWNER', 'MANAGER'],
       },

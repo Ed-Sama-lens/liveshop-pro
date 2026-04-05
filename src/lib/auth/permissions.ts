@@ -13,7 +13,7 @@ export const ROUTE_PERMISSIONS = [
   { prefix: '/orders', roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/customers', roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/chat', roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'] as UserRole[] },
-  { prefix: '/live', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/live-selling', roles: ['OWNER', 'MANAGER'] as UserRole[] },
   { prefix: '/analytics', roles: ['OWNER', 'MANAGER'] as UserRole[] },
   { prefix: '/dashboard', roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/reports', roles: ['OWNER', 'MANAGER'] as UserRole[] },
