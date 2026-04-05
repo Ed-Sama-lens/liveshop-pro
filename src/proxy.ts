@@ -11,13 +11,20 @@ const intlMiddleware = createIntlMiddleware(routing);
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Redirect legacy locale-prefixed URLs (e.g. /th/dashboard → /dashboard)
+  const localeMatch = pathname.match(/^\/(en|th|zh)(\/.*)?$/);
+  if (localeMatch) {
+    const cleanPath = localeMatch[2] || '/';
+    return NextResponse.redirect(new URL(cleanPath, request.url));
+  }
+
   // Skip static assets and auth API
   const isStaticOrApi =
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/') ||
     pathname.includes('.');
 
-  // Run intl middleware for locale detection on non-static paths
+  // Run intl middleware for cookie-based locale detection (no URL prefix)
   if (!isStaticOrApi) {
     const intlResponse = intlMiddleware(request);
     if (intlResponse && intlResponse.status !== 200) return intlResponse;
