@@ -1,6 +1,8 @@
 import NextAuth from 'next-auth';
 import Facebook from 'next-auth/providers/facebook';
+import Credentials from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db/prisma';
 import { logger } from '@/lib/logging/logger';
 import type { UserRole } from './types';
@@ -12,6 +14,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Facebook({
       clientId: process.env.FACEBOOK_CLIENT_ID!,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
+    }),
+    Credentials({
+      name: 'credentials',
+      credentials: {
+        username: { label: 'Username', type: 'text' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        const username = credentials?.username as string | undefined;
+        const password = credentials?.password as string | undefined;
+
+        if (!username || !password) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { username },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            role: true,
+            isActive: true,
+            hashedPassword: true,
+          },
+        });
+
+        if (!user || !user.hashedPassword) return null;
+        if (!user.isActive) return null;
+
+        const isValid = await bcrypt.compare(password, user.hashedPassword);
+        if (!isValid) return null;
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          role: user.role,
+        };
+      },
     }),
   ],
   session: {
@@ -26,7 +68,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user, account }) {
       if (!user.id) return false;
 
-      // Check if user is deactivated
+      // Skip DB check for credentials provider (already checked in authorize)
+      if (account?.provider === 'credentials') {
+        // Write LoginEvent audit record
+        try {
+          await prisma.loginEvent.create({
+            data: {
+              userId: user.id,
+              success: true,
+            },
+          });
+        } catch (err) {
+          logger.error({ err, userId: user.id }, '[Auth] Failed to write LoginEvent');
+        }
+        return true;
+      }
+
+      // Check if user is deactivated (Facebook login)
       const dbUser = await prisma.user.findUnique({
         where: { id: user.id },
         select: { isActive: true },

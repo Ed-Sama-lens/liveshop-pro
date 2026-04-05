@@ -10,16 +10,18 @@ datasource db {
 // ─── Auth & Users ──────────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  facebookId    String?   @unique
-  role          UserRole  @default(CHAT_SUPPORT)
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+  facebookId     String?   @unique
+  username       String?   @unique
+  hashedPassword String?
+  role           UserRole  @default(CHAT_SUPPORT)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   accounts    Account[]
   sessions    Session[]
@@ -29,6 +31,7 @@ model User {
 
   @@index([facebookId])
   @@index([email])
+  @@index([username])
 }
 
 model Account {

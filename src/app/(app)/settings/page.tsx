@@ -64,6 +64,9 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<readonly ShopMemberRow[]>([]);
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('CHAT_SUPPORT');
   const [isInviting, setIsInviting] = useState(false);
@@ -139,28 +142,44 @@ export default function SettingsPage() {
     }
   }
 
-  // ─── Invite Member ──────────────────────────────────────────────────────
+  // ─── Add Member ─────────────────────────────────────────────────────────
   async function handleInvite() {
-    if (!inviteEmail) return;
+    if (!inviteName || !inviteUsername || !invitePassword) {
+      toast.error('Name, username and password are required');
+      return;
+    }
+    if (invitePassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
     setIsInviting(true);
     try {
       const res = await fetch('/api/settings/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+        body: JSON.stringify({
+          name: inviteName,
+          username: inviteUsername,
+          password: invitePassword,
+          email: inviteEmail || undefined,
+          role: inviteRole,
+        }),
       });
       const body = await res.json();
       if (body.success) {
-        toast.success(t('invited'));
+        toast.success('Team member added successfully');
         setInviteDialogOpen(false);
+        setInviteName('');
+        setInviteUsername('');
+        setInvitePassword('');
         setInviteEmail('');
         setInviteRole('CHAT_SUPPORT');
         fetchTeam();
       } else {
-        toast.error(body.error ?? 'Failed to invite');
+        toast.error(body.error ?? 'Failed to add member');
       }
     } catch {
-      toast.error('Failed to invite member');
+      toast.error('Failed to add member');
     } finally {
       setIsInviting(false);
     }
@@ -292,11 +311,38 @@ export default function SettingsPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{t('inviteMember')}</DialogTitle>
+                <DialogTitle>Add Team Member</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>{t('email')}</Label>
+                  <Label>Name *</Label>
+                  <Input
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Username *</Label>
+                  <Input
+                    value={inviteUsername}
+                    onChange={(e) => setInviteUsername(e.target.value)}
+                    placeholder="e.g. john_staff"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password *</Label>
+                  <Input
+                    type="password"
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                    placeholder="Min 8 characters"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email (optional)</Label>
                   <Input
                     type="email"
                     value={inviteEmail}
@@ -322,8 +368,8 @@ export default function SettingsPage() {
                 <DialogClose render={<Button variant="outline" />}>
                   Cancel
                 </DialogClose>
-                <Button onClick={handleInvite} disabled={!inviteEmail || isInviting}>
-                  {isInviting ? '...' : t('inviteMember')}
+                <Button onClick={handleInvite} disabled={!inviteName || !inviteUsername || !invitePassword || isInviting}>
+                  {isInviting ? '...' : 'Add Member'}
                 </Button>
               </DialogFooter>
             </DialogContent>

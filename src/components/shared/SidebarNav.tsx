@@ -138,7 +138,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: 'Settings',
         href: '/settings',
         icon: Settings,
-        roles: ['OWNER', 'MANAGER'],
+        roles: ['OWNER'],
       },
     ],
   },

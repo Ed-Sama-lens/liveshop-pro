@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { NotFoundError } from '@/lib/errors';
+import bcrypt from 'bcryptjs';
 import type { UpdateShopInput, InviteMemberInput, UpdateMemberRoleInput } from '@/lib/validation/settings.schemas';
 
 // ─── Serialized Types ────────────────────────────────────────────────────────
@@ -119,27 +120,42 @@ export const shopRepository: ShopRepository = Object.freeze({
   },
 
   async inviteMember(shopId: string, input: InviteMemberInput) {
-    // Find user by email
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
-    if (!user) throw new NotFoundError('User not found with that email');
+    // Check if username already taken
+    const existingUser = await prisma.user.findUnique({ where: { username: input.username } });
+    if (existingUser) {
+      throw new NotFoundError('Username is already taken');
+    }
 
-    // Check if already a member
-    const existing = await prisma.shopMember.findUnique({
-      where: { shopId_userId: { shopId, userId: user.id } },
-    });
-    if (existing) throw new NotFoundError('User is already a member of this shop');
+    // Hash password
+    const hashedPassword = await bcrypt.hash(input.password, 12);
 
-    const member = await prisma.shopMember.create({
-      data: {
-        shopId,
-        userId: user.id,
-        role: input.role,
-        joinedAt: new Date(),
-      },
-      include: {
-        user: { select: { name: true, email: true, image: true } },
-      },
+    // Create user + shop member in transaction
+    const member = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          name: input.name,
+          email: input.email ?? null,
+          username: input.username,
+          hashedPassword,
+          role: input.role,
+        },
+      });
+
+      const shopMember = await tx.shopMember.create({
+        data: {
+          shopId,
+          userId: newUser.id,
+          role: input.role,
+          joinedAt: new Date(),
+        },
+        include: {
+          user: { select: { name: true, email: true, image: true } },
+        },
+      });
+
+      return shopMember;
     });
+
     return serializeMember(member);
   },
 

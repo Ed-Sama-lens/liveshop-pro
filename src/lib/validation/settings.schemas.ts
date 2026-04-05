@@ -14,7 +14,10 @@ export type UpdateShopInput = z.infer<typeof updateShopSchema>;
 // ─── Team Member Management ─────────────────────────────────────────────────
 
 export const inviteMemberSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
+  name: z.string().min(1).max(100),
+  username: z.string().min(3).max(50),
+  password: z.string().min(8).max(100),
   role: z.enum(['MANAGER', 'CHAT_SUPPORT', 'WAREHOUSE']),
 });
 
