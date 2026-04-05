@@ -16,9 +16,16 @@ export const ROUTE_PERMISSIONS = [
   { prefix: '/live', roles: ['OWNER', 'MANAGER'] as UserRole[] },
   { prefix: '/analytics', roles: ['OWNER', 'MANAGER'] as UserRole[] },
   { prefix: '/dashboard', roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'] as UserRole[] },
+  { prefix: '/reports', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/payments', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/storefront', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/exchange-rates', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/notifications', roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'] as UserRole[] },
+  { prefix: '/activity', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  { prefix: '/bulk', roles: ['OWNER', 'MANAGER'] as UserRole[] },
 ] as const;
 
-export const PUBLIC_PATHS = ['/auth', '/api/auth', '/_next', '/favicon.ico', '/store'] as const;
+export const PUBLIC_PATHS = ['/auth', '/api/auth', '/_next', '/favicon.ico', '/store', '/shop', '/unauthorized', '/privacy', '/terms', '/data-deletion'] as const;
 
 /**
  * Pure function — no side effects, returns boolean.
