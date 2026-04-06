@@ -184,11 +184,11 @@ export default function OrderDetailPage() {
           </div>
           <div>
             <span className="text-muted-foreground">{t('totalAmount')}:</span>{' '}
-            <span className="font-mono font-medium">฿{Number(order.totalAmount).toLocaleString()}</span>
+            <span className="font-mono font-medium">RM{Number(order.totalAmount).toLocaleString()}</span>
           </div>
           <div>
             <span className="text-muted-foreground">{t('shippingFee')}:</span>{' '}
-            <span className="font-mono">฿{Number(order.shippingFee).toLocaleString()}</span>
+            <span className="font-mono">RM{Number(order.shippingFee).toLocaleString()}</span>
           </div>
           {order.notes && (
             <div className="sm:col-span-2">
@@ -217,9 +217,9 @@ export default function OrderDetailPage() {
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.product.name}</TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">{item.variant.sku}</TableCell>
-                  <TableCell className="text-right font-mono">฿{Number(item.unitPrice).toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">RM{Number(item.unitPrice).toLocaleString()}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell className="text-right font-mono">฿{Number(item.totalPrice).toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">RM{Number(item.totalPrice).toLocaleString()}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

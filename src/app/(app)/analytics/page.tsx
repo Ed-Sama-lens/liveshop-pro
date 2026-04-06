@@ -104,10 +104,10 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-mono">
-              ฿{Number(stats.totalRevenue).toLocaleString()}
+              RM{Number(stats.totalRevenue).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
-              {t('revenueToday')}: ฿{Number(stats.revenueToday).toLocaleString()}
+              {t('revenueToday')}: RM{Number(stats.revenueToday).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -177,7 +177,7 @@ export default function AnalyticsPage() {
                       />
                     </div>
                     <span className="w-24 text-right font-mono">
-                      ฿{Number(day.revenue).toLocaleString()}
+                      RM{Number(day.revenue).toLocaleString()}
                     </span>
                     <span className="w-8 text-right text-muted-foreground">
                       {day.orders}
@@ -233,7 +233,7 @@ export default function AnalyticsPage() {
                       </TableCell>
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-mono">
-                        ฿{Number(item.revenue).toLocaleString()}
+                        RM{Number(item.revenue).toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -265,7 +265,7 @@ export default function AnalyticsPage() {
                     <TableCell className="font-medium">{product.productName}</TableCell>
                     <TableCell className="text-right">{product.totalQuantity.toLocaleString()}</TableCell>
                     <TableCell className="text-right font-mono">
-                      ฿{Number(product.totalRevenue).toLocaleString()}
+                      RM{Number(product.totalRevenue).toLocaleString()}
                     </TableCell>
                   </TableRow>
                 ))}

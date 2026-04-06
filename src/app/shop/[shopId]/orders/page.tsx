@@ -169,12 +169,12 @@ export default function CustomerOrdersPage() {
                     )}
                     <span className="text-muted-foreground"> x{item.quantity}</span>
                   </div>
-                  <span className="font-mono">฿{Number(item.totalPrice).toLocaleString()}</span>
+                  <span className="font-mono">RM{Number(item.totalPrice).toLocaleString()}</span>
                 </div>
               ))}
               <div className="border-t pt-3 flex justify-between font-bold">
                 <span>{t('total')}</span>
-                <span className="font-mono">฿{Number(detail.totalAmount).toLocaleString()}</span>
+                <span className="font-mono">RM{Number(detail.totalAmount).toLocaleString()}</span>
               </div>
             </div>
           </CardContent>
@@ -194,7 +194,7 @@ export default function CustomerOrdersPage() {
                     {detail.payment.status}
                   </Badge>
                 </div>
-                <span className="font-mono">฿{Number(detail.payment.amount).toLocaleString()}</span>
+                <span className="font-mono">RM{Number(detail.payment.amount).toLocaleString()}</span>
               </div>
             </CardContent>
           </Card>
@@ -326,7 +326,7 @@ export default function CustomerOrdersPage() {
                         {new Date(order.createdAt).toLocaleDateString()} — {order.itemCount} {t('orderItems')}
                       </span>
                       <span className="font-mono font-medium text-foreground">
-                        ฿{Number(order.totalAmount).toLocaleString()}
+                        RM{Number(order.totalAmount).toLocaleString()}
                       </span>
                     </div>
 

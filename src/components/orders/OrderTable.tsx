@@ -88,7 +88,7 @@ export function OrderTable({ orders, isLoading = false }: OrderTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="font-mono text-sm">
-                ฿{Number(order.totalAmount).toLocaleString()}
+                RM{Number(order.totalAmount).toLocaleString()}
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {order._count?.items ?? 0}

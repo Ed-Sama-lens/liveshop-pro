@@ -31,7 +31,7 @@ export default function ShopPage() {
   const [products, setProducts] = useState<readonly StorefrontProductRow[]>([]);
   const [meta, setMeta] = useState<PaginationMeta | undefined>();
   const [branding, setBranding] = useState<BrandingRow | null>(null);
-  const [currencySymbol, setCurrencySymbol] = useState('฿');
+  const [currencySymbol, setCurrencySymbol] = useState('RM');
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');

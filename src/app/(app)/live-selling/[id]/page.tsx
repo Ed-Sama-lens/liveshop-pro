@@ -208,7 +208,7 @@ export default function LiveSessionDetailPage() {
         </Card>
         <Card className="p-3 text-center">
           <DollarSign className="mx-auto size-5 text-muted-foreground" />
-          <p className="mt-1 text-2xl font-bold font-mono">฿{Number(session.totalRevenue).toLocaleString()}</p>
+          <p className="mt-1 text-2xl font-bold font-mono">RM{Number(session.totalRevenue).toLocaleString()}</p>
           <p className="text-xs text-muted-foreground">{t('totalRevenue')}</p>
         </Card>
         <Card className="p-3 text-center">

@@ -258,7 +258,7 @@ export function OrderForm() {
                       >
                         <span>{variant.sku}</span>
                         <span className="text-muted-foreground">
-                          ฿{Number(variant.price).toLocaleString()} ({available} avail.)
+                          RM{Number(variant.price).toLocaleString()} ({available} avail.)
                         </span>
                       </button>
                     );
@@ -339,7 +339,7 @@ export function OrderForm() {
       {/* Total */}
       <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
         <span className="font-medium">{t('totalAmount')}</span>
-        <span className="text-lg font-bold font-mono">฿{calculateTotal().toLocaleString()}</span>
+        <span className="text-lg font-bold font-mono">RM{calculateTotal().toLocaleString()}</span>
       </div>
 
       {/* Actions */}

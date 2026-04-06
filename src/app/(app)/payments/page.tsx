@@ -296,10 +296,10 @@ export default function PaymentsPage() {
                   {/* Amount */}
                   <div className="text-right shrink-0">
                     <p className="text-lg font-mono font-bold">
-                      ฿{Number(p.amount).toLocaleString()}
+                      RM{Number(p.amount).toLocaleString()}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {t('orderTotal')}: ฿{Number(p.order.totalAmount).toLocaleString()}
+                      {t('orderTotal')}: RM{Number(p.order.totalAmount).toLocaleString()}
                     </p>
                   </div>
 
@@ -362,11 +362,11 @@ export default function PaymentsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{t('paymentAmount')}</span>
-                  <span className="font-mono font-bold">฿{Number(selectedPayment.amount).toLocaleString()}</span>
+                  <span className="font-mono font-bold">RM{Number(selectedPayment.amount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{t('orderTotal')}</span>
-                  <span className="font-mono">฿{Number(selectedPayment.order.totalAmount).toLocaleString()}</span>
+                  <span className="font-mono">RM{Number(selectedPayment.order.totalAmount).toLocaleString()}</span>
                 </div>
                 {selectedPayment.amount !== selectedPayment.order.totalAmount && (
                   <div className="rounded bg-amber-50 dark:bg-amber-950/30 p-2 text-xs text-amber-800 dark:text-amber-300">

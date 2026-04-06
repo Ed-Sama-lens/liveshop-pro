@@ -215,7 +215,7 @@ export default function CustomerDetailPage() {
         </div>
         <div className="mt-4 flex items-center gap-3 border-t pt-3">
           <div className="text-lg font-bold">
-            {t('lifetimeValue')}: ฿{Number(customer.lifetimeValue).toLocaleString()}
+            {t('lifetimeValue')}: RM{Number(customer.lifetimeValue).toLocaleString()}
           </div>
           <Button variant="ghost" size="icon-sm" onClick={handleRecalculateLtv} disabled={isRecalculating}>
             <RefreshCw className={`size-3.5 ${isRecalculating ? 'animate-spin' : ''}`} />
@@ -246,7 +246,7 @@ export default function CustomerDetailPage() {
                   <TableRow key={order.id}>
                     <TableCell className="font-mono text-sm">{order.orderNumber ?? order.id.slice(0, 8)}</TableCell>
                     <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
-                    <TableCell className="font-mono">฿{Number(order.total).toLocaleString()}</TableCell>
+                    <TableCell className="font-mono">RM{Number(order.total).toLocaleString()}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {new Date(order.createdAt).toLocaleDateString()}
                     </TableCell>

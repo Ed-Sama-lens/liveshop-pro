@@ -140,7 +140,7 @@ export function CustomerTable({
                 </div>
               </TableCell>
               <TableCell className="font-mono text-sm">
-                ฿{Number(customer.lifetimeValue).toLocaleString()}
+                RM{Number(customer.lifetimeValue).toLocaleString()}
               </TableCell>
               <TableCell>
                 <Button variant="ghost" size="icon-sm" render={<Link href={`/customers/${customer.id}`} />}>

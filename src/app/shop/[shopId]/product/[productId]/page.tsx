@@ -33,7 +33,7 @@ export default function ProductDetailPage() {
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
-  const [currencySymbol, setCurrencySymbol] = useState('฿');
+  const [currencySymbol, setCurrencySymbol] = useState('RM');
   const { getCustomerId } = useStorefrontAuth();
 
   // Fetch shop's default currency

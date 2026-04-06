@@ -55,7 +55,7 @@ export function orderConfirmationEmail(data: OrderConfirmationData): {
   const itemRows = data.items
     .map(
       (item) =>
-        `<tr><td style="padding:8px 0;border-bottom:1px solid #e5e7eb">${item.name}</td><td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:center">${item.quantity}</td><td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">฿${Number(item.price).toLocaleString()}</td></tr>`
+        `<tr><td style="padding:8px 0;border-bottom:1px solid #e5e7eb">${item.name}</td><td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:center">${item.quantity}</td><td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">RM${Number(item.price).toLocaleString()}</td></tr>`
     )
     .join('');
 
@@ -80,7 +80,7 @@ export function orderConfirmationEmail(data: OrderConfirmationData): {
           ${itemRows}
         </tbody>
       </table>
-      <p class="total">Total: ฿${Number(data.totalAmount).toLocaleString()}</p>
+      <p class="total">Total: RM${Number(data.totalAmount).toLocaleString()}</p>
       <p style="margin-top:20px;color:#6b7280">We'll notify you when your order ships.</p>
     </div>
     <div class="footer">
@@ -88,7 +88,7 @@ export function orderConfirmationEmail(data: OrderConfirmationData): {
     </div>
   `);
 
-  const text = `Order Confirmation - ${data.orderNumber}\n\nHi ${data.customerName},\n\nThank you for your order!\n\n${data.items.map((i) => `${i.name} x${i.quantity} — ฿${Number(i.price).toLocaleString()}`).join('\n')}\n\nTotal: ฿${Number(data.totalAmount).toLocaleString()}\n\n— ${data.shopName}`;
+  const text = `Order Confirmation - ${data.orderNumber}\n\nHi ${data.customerName},\n\nThank you for your order!\n\n${data.items.map((i) => `${i.name} x${i.quantity} — RM${Number(i.price).toLocaleString()}`).join('\n')}\n\nTotal: RM${Number(data.totalAmount).toLocaleString()}\n\n— ${data.shopName}`;
 
   return {
     subject: `Order Confirmed — ${data.orderNumber} | ${data.shopName}`,

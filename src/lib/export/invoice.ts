@@ -34,8 +34,8 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       <tr>
         <td style="padding:8px;border-bottom:1px solid #e5e7eb">${item.name}<br><span style="font-size:11px;color:#6b7280">${item.sku}</span></td>
         <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">${item.quantity}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">฿${Number(item.unitPrice).toLocaleString()}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">฿${Number(item.totalPrice).toLocaleString()}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">RM${Number(item.unitPrice).toLocaleString()}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:monospace">RM${Number(item.totalPrice).toLocaleString()}</td>
       </tr>`
     )
     .join('');
@@ -116,15 +116,15 @@ export function generateInvoiceHtml(data: InvoiceData): string {
   <table class="totals">
     <tr>
       <td>Subtotal</td>
-      <td style="text-align:right;font-family:monospace">฿${Number(data.subtotal).toLocaleString()}</td>
+      <td style="text-align:right;font-family:monospace">RM${Number(data.subtotal).toLocaleString()}</td>
     </tr>
     <tr>
       <td>Shipping</td>
-      <td style="text-align:right;font-family:monospace">฿${Number(data.shippingFee).toLocaleString()}</td>
+      <td style="text-align:right;font-family:monospace">RM${Number(data.shippingFee).toLocaleString()}</td>
     </tr>
     <tr class="total-row">
       <td>Total</td>
-      <td style="text-align:right;font-family:monospace">฿${Number(data.total).toLocaleString()}</td>
+      <td style="text-align:right;font-family:monospace">RM${Number(data.total).toLocaleString()}</td>
     </tr>
   </table>
 

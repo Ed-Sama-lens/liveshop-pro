@@ -172,13 +172,13 @@ export default function CheckoutPage() {
                     {item.product.name} x{item.quantity}
                   </span>
                   <span className="font-mono">
-                    ฿{(Number(item.variant.price) * item.quantity).toLocaleString()}
+                    RM{(Number(item.variant.price) * item.quantity).toLocaleString()}
                   </span>
                 </div>
               ))}
               <div className="border-t pt-2 mt-2 flex justify-between font-bold">
                 <span>{t('total')}</span>
-                <span className="font-mono">฿{subtotal.toLocaleString()}</span>
+                <span className="font-mono">RM{subtotal.toLocaleString()}</span>
               </div>
             </div>
           </CardContent>
@@ -282,7 +282,7 @@ export default function CheckoutPage() {
           onClick={handleCheckout}
           disabled={isSubmitting || !form.name || !form.phone || !form.address}
         >
-          {isSubmitting ? '...' : `${t('placeOrder')} — ฿${subtotal.toLocaleString()}`}
+          {isSubmitting ? '...' : `${t('placeOrder')} — RM{subtotal.toLocaleString()}`}
         </Button>
       </div>
     </div>
@@ -401,7 +401,7 @@ function PaymentInstructions({ shopId, orderId, orderNumber, totalAmount, t }: P
           {t('orderNumber')}: <span className="font-mono font-bold">{orderNumber}</span>
         </p>
         <p className="text-2xl font-mono font-bold text-primary">
-          ฿{Number(totalAmount).toLocaleString()}
+          RM{Number(totalAmount).toLocaleString()}
         </p>
       </div>
 

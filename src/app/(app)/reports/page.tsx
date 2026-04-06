@@ -209,12 +209,12 @@ export default function ReportsPage() {
           <div className="grid grid-cols-2 gap-4 border-b p-4 sm:grid-cols-4">
             <div>
               <p className="text-xs text-muted-foreground">Total Revenue</p>
-              <p className="text-lg font-bold">฿{Number(summary.totalRevenue).toLocaleString()}</p>
+              <p className="text-lg font-bold">RM{Number(summary.totalRevenue).toLocaleString()}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Net Revenue</p>
               <p className="text-lg font-bold text-green-600">
-                ฿{Number(summary.netRevenue).toLocaleString()}
+                RM{Number(summary.netRevenue).toLocaleString()}
               </p>
             </div>
             <div>
@@ -224,7 +224,7 @@ export default function ReportsPage() {
             <div>
               <p className="text-xs text-muted-foreground">Shipping Fees</p>
               <p className="text-lg font-bold text-muted-foreground">
-                ฿{Number(summary.totalShipping).toLocaleString()}
+                RM{Number(summary.totalShipping).toLocaleString()}
               </p>
             </div>
           </div>
@@ -262,13 +262,13 @@ export default function ReportsPage() {
                     <td className="px-4 py-2 font-mono text-xs">{row.period}</td>
                     <td className="px-4 py-2 text-right">{row.orders}</td>
                     <td className="px-4 py-2 text-right font-mono">
-                      ฿{Number(row.revenue).toLocaleString()}
+                      RM{Number(row.revenue).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-muted-foreground">
-                      ฿{Number(row.shipping).toLocaleString()}
+                      RM{Number(row.shipping).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-right font-mono font-semibold text-green-600">
-                      ฿{Number(row.netRevenue).toLocaleString()}
+                      RM{Number(row.netRevenue).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-xs">{row.topChannel}</td>
                   </tr>

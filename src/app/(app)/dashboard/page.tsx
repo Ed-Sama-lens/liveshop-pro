@@ -145,7 +145,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-mono">
-              ฿{Number(stats.totalRevenue).toLocaleString()}
+              RM{Number(stats.totalRevenue).toLocaleString()}
             </div>
             <div className="flex items-center gap-1 mt-1">
               {revenueTrend.isPositive ? (
@@ -181,7 +181,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-mono">
-              ฿{Number(conversionStats.averageOrderValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              RM{Number(conversionStats.averageOrderValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </div>
             <p className="text-xs text-muted-foreground">
               {t('totalCustomers')}: {stats.totalCustomers.toLocaleString()}
@@ -218,7 +218,7 @@ export default function DashboardPage() {
                         />
                       </div>
                       <span className="w-16 text-right font-mono">
-                        ฿{Number(day.revenue).toLocaleString()}
+                        RM{Number(day.revenue).toLocaleString()}
                       </span>
                     </div>
                   );
@@ -339,7 +339,7 @@ export default function DashboardPage() {
                         {product.totalQuantity} {t('sold')}
                       </Badge>
                       <span className="font-mono text-muted-foreground">
-                        ฿{Number(product.totalRevenue).toLocaleString()}
+                        RM{Number(product.totalRevenue).toLocaleString()}
                       </span>
                     </div>
                   </div>

@@ -95,7 +95,7 @@ export function LiveSessionTable({ sessions, isLoading = false }: LiveSessionTab
                 {session.orderCount.toLocaleString()}
               </TableCell>
               <TableCell className="font-mono text-sm">
-                ฿{Number(session.totalRevenue).toLocaleString()}
+                RM{Number(session.totalRevenue).toLocaleString()}
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {formatDuration(session.startedAt, session.endedAt)}

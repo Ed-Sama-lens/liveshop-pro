@@ -81,9 +81,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const csv = buildCsv(rows, [
         { key: 'period', header: 'Period' },
         { key: 'orders', header: 'Orders' },
-        { key: 'revenue', header: 'Revenue (฿)' },
-        { key: 'shipping', header: 'Shipping (฿)' },
-        { key: 'netRevenue', header: 'Net Revenue (฿)' },
+        { key: 'revenue', header: 'Revenue (RM)' },
+        { key: 'shipping', header: 'Shipping (RM)' },
+        { key: 'netRevenue', header: 'Net Revenue (RM)' },
         { key: 'topChannel', header: 'Top Channel' },
       ]);
 

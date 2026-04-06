@@ -16,7 +16,7 @@ export async function notifyNewOrder(
       shopId,
       type: 'NEW_ORDER',
       title: `New Order ${orderNumber}`,
-      body: `${customerName} placed an order for ฿${Number(totalAmount).toLocaleString()}`,
+      body: `${customerName} placed an order for RM${Number(totalAmount).toLocaleString()}`,
       link: `/orders?search=${orderNumber}`,
     });
   } catch {
@@ -89,7 +89,7 @@ export async function notifyPaymentReceived(
       shopId,
       type: 'PAYMENT_RECEIVED',
       title: 'Payment Received',
-      body: `Payment of ฿${Number(amount).toLocaleString()} for ${orderNumber}`,
+      body: `Payment of RM${Number(amount).toLocaleString()} for ${orderNumber}`,
       link: `/orders?search=${orderNumber}`,
     });
   } catch {

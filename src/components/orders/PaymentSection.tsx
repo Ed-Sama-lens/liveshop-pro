@@ -217,7 +217,7 @@ export function PaymentSection({ orderId, totalAmount }: PaymentSectionProps) {
           </div>
           <div>
             <span className="text-muted-foreground">{t('paymentAmount')}:</span>{' '}
-            <span className="font-mono">฿{Number(payment.amount).toLocaleString()}</span>
+            <span className="font-mono">RM{Number(payment.amount).toLocaleString()}</span>
           </div>
           <div>
             <span className="text-muted-foreground">{t('paymentStatus')}:</span>{' '}

@@ -15,7 +15,7 @@ export async function GET(
     if (!shopId) throw new NotFoundError('Shop not found');
 
     const branding = await brandingRepository.findByShopId(shopId);
-    const defaultCurrency = 'THB'; // Default currency, branding repository should provide it if available
+    const defaultCurrency = 'MYR'; // Shop default currency (Malaysian Ringgit)
 
     if (!branding) {
       return NextResponse.json(ok({ shopId, shopName: null, logo: null, banner: null, primaryColor: null, accentColor: null, description: null, defaultCurrency }));

@@ -167,7 +167,7 @@ export default function CartPage() {
                       <h3 className="font-medium truncate">{item.product.name}</h3>
                       <p className="text-xs text-muted-foreground">{attrs}</p>
                       <p className="text-sm font-mono font-bold mt-1">
-                        ฿{Number(item.variant.price).toLocaleString()}
+                        RM{Number(item.variant.price).toLocaleString()}
                       </p>
 
                       <div className="flex items-center justify-between mt-2">
@@ -205,7 +205,7 @@ export default function CartPage() {
 
                         <div className="flex items-center gap-3">
                           <span className="font-mono font-bold">
-                            ฿{(Number(item.variant.price) * item.quantity).toLocaleString()}
+                            RM{(Number(item.variant.price) * item.quantity).toLocaleString()}
                           </span>
                           <Button
                             variant="ghost"
@@ -228,7 +228,7 @@ export default function CartPage() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between text-lg font-bold">
                 <span>{t('subtotal')}</span>
-                <span className="font-mono">฿{subtotal.toLocaleString()}</span>
+                <span className="font-mono">RM{subtotal.toLocaleString()}</span>
               </div>
             </CardContent>
           </Card>
@@ -240,7 +240,7 @@ export default function CartPage() {
             </Button>
             <Link href={`/shop/${shopId}/checkout`} className="flex-1">
               <Button className="w-full" size="lg">
-                {t('checkout')} — ฿{subtotal.toLocaleString()}
+                {t('checkout')} — RM{subtotal.toLocaleString()}
               </Button>
             </Link>
           </div>

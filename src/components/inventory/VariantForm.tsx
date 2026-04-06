@@ -73,7 +73,7 @@ export function VariantForm({ index, value, onChange, onRemove, canRemove }: Var
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor={`price-${index}`}>{t('price')}</Label>
+          <Label htmlFor={`price-${index}`}>{t('price')} (RM)</Label>
           <Input
             id={`price-${index}`}
             value={value.price}
@@ -84,7 +84,7 @@ export function VariantForm({ index, value, onChange, onRemove, canRemove }: Var
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor={`costPrice-${index}`}>{t('costPrice')}</Label>
+          <Label htmlFor={`costPrice-${index}`}>{t('costPrice')} (RM)</Label>
           <Input
             id={`costPrice-${index}`}
             value={value.costPrice}
