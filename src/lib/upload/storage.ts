@@ -40,33 +40,36 @@ export interface UploadResult {
 
 /**
  * Upload a file to Cloudflare R2.
- * Returns the public URL.
+ * Accepts either a File object or a raw Buffer with mimeType.
  */
 export async function saveFile(
-  file: File,
+  input: File | { buffer: Buffer; mimeType: string },
   subfolder: string
 ): Promise<UploadResult> {
-  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-    throw new Error(`Invalid file type: ${file.type}. Allowed: JPEG, PNG, WebP, GIF`);
+  const mimeType = input instanceof File ? input.type : input.mimeType;
+  const body = input instanceof File
+    ? Buffer.from(await input.arrayBuffer())
+    : input.buffer;
+
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    throw new Error(`Invalid file type: ${mimeType}. Allowed: JPEG, PNG, WebP, GIF`);
   }
 
-  if (file.size > MAX_FILE_SIZE) {
+  if (body.length > MAX_FILE_SIZE) {
     throw new Error(`File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB`);
   }
 
-  const ext = getExtension(file.type);
+  const ext = getExtension(mimeType);
   const hash = crypto.randomBytes(16).toString('hex');
   const filename = `${hash}${ext}`;
   const key = `${subfolder}/${filename}`;
-
-  const buffer = Buffer.from(await file.arrayBuffer());
 
   await s3.send(
     new PutObjectCommand({
       Bucket: R2_BUCKET_NAME,
       Key: key,
-      Body: buffer,
-      ContentType: file.type,
+      Body: body,
+      ContentType: mimeType,
     })
   );
 
@@ -75,8 +78,8 @@ export async function saveFile(
   return Object.freeze({
     url,
     filename,
-    size: file.size,
-    mimeType: file.type,
+    size: body.length,
+    mimeType,
   });
 }
 
