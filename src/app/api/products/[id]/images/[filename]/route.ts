@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { unlink } from 'fs/promises';
-import { join } from 'path';
+import { del } from '@vercel/blob';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
 import { toAppError, NotFoundError } from '@/lib/errors';
@@ -43,12 +42,11 @@ export async function DELETE(
     const updatedImages = product.images.filter((img) => img !== imageUrl);
     await productRepository.update(user.shopId, productId, { images: updatedImages });
 
-    // Delete file from disk (best-effort — don't fail if already gone)
+    // Delete from Vercel Blob (best-effort)
     try {
-      const filePath = join(process.cwd(), 'public', 'uploads', 'products', productId, filename);
-      await unlink(filePath);
+      await del(imageUrl);
     } catch {
-      // File may not exist on disk; repository update already succeeded
+      // Blob may not exist; DB update already succeeded
     }
 
     return NextResponse.json(ok({ images: updatedImages }));

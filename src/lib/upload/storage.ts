@@ -1,9 +1,5 @@
-import { writeFile, mkdir, unlink } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
+import { put, del } from '@vercel/blob';
 import crypto from 'crypto';
-
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -22,10 +18,8 @@ export interface UploadResult {
 }
 
 /**
- * Save an uploaded file to local storage.
- * Returns the public URL path.
- *
- * In production, swap this for S3/Cloudinary/R2.
+ * Upload a file to Vercel Blob storage.
+ * Returns the public URL.
  */
 export async function saveFile(
   file: File,
@@ -41,24 +35,21 @@ export async function saveFile(
     throw new Error(`File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB`);
   }
 
-  // Create upload directory
-  const dir = path.join(UPLOAD_DIR, subfolder);
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
-
   // Generate unique filename
   const ext = getExtension(file.type);
   const hash = crypto.randomBytes(16).toString('hex');
   const filename = `${hash}${ext}`;
-  const filepath = path.join(dir, filename);
+  const blobPath = `${subfolder}/${filename}`;
 
-  // Write file
+  // Upload to Vercel Blob
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(filepath, buffer);
+  const blob = await put(blobPath, buffer, {
+    access: 'public',
+    contentType: file.type,
+  });
 
   return Object.freeze({
-    url: `/uploads/${subfolder}/${filename}`,
+    url: blob.url,
     filename,
     size: file.size,
     mimeType: file.type,
@@ -66,14 +57,13 @@ export async function saveFile(
 }
 
 /**
- * Delete a previously uploaded file by its URL path.
+ * Delete a previously uploaded file from Vercel Blob.
  */
 export async function deleteFile(url: string): Promise<void> {
-  if (!url.startsWith('/uploads/')) return;
+  if (!url) return;
 
-  const filepath = path.join(process.cwd(), 'public', url);
   try {
-    await unlink(filepath);
+    await del(url);
   } catch {
     // File may already be deleted, ignore
   }

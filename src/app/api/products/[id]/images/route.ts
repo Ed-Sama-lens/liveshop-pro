@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { put } from '@vercel/blob';
 import sharp from 'sharp';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
@@ -40,7 +39,11 @@ export async function POST(
     }
 
     const formData = await request.formData();
-    const files = formData.getAll('images') as File[];
+    // Accept both 'files' and 'images' field names
+    let files = formData.getAll('files') as File[];
+    if (files.length === 0) {
+      files = formData.getAll('images') as File[];
+    }
 
     if (files.length === 0) {
       throw new ValidationError('No images provided');
@@ -50,11 +53,11 @@ export async function POST(
       throw new ValidationError(`Maximum ${MAX_FILES} images allowed per upload`);
     }
 
-    // Validate all files before processing any
+    // Validate all files before processing
     for (const file of files) {
       if (!ALLOWED_MIME_TYPES.has(file.type)) {
         throw new ValidationError(
-          `Invalid file type: ${file.type}. Allowed types: image/jpeg, image/png, image/webp`
+          `Invalid file type: ${file.type}. Allowed: jpeg, png, webp`
         );
       }
       if (file.size > MAX_FILE_SIZE) {
@@ -64,23 +67,26 @@ export async function POST(
       }
     }
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'products', productId);
-    await mkdir(uploadDir, { recursive: true });
-
     const newUrls: string[] = [];
 
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const filename = `${crypto.randomUUID()}.webp`;
-      const outputPath = join(uploadDir, filename);
 
-      await sharp(buffer)
+      // Optimize image with sharp
+      const optimized = await sharp(buffer)
         .resize({ width: MAX_WIDTH, withoutEnlargement: true })
-        .webp()
-        .toFile(outputPath);
+        .webp({ quality: 80 })
+        .toBuffer();
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
-      newUrls.push(`${baseUrl}/uploads/products/${productId}/${filename}`);
+      const filename = `products/${productId}/${crypto.randomUUID()}.webp`;
+
+      // Upload to Vercel Blob
+      const blob = await put(filename, optimized, {
+        access: 'public',
+        contentType: 'image/webp',
+      });
+
+      newUrls.push(blob.url);
     }
 
     // Immutable update: read current images, concat new, write back
