@@ -1,7 +1,6 @@
 'use client';
 
 import { useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
 import { Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,16 +17,16 @@ const LOCALE_LABELS: Record<string, string> = {
 };
 
 /**
- * Cookie-based locale switcher — no URL prefix needed.
- * Sets NEXT_LOCALE cookie and refreshes to apply.
+ * Cookie-based locale switcher.
+ * Sets NEXT_LOCALE cookie then does full page reload to apply server-side.
  */
 export function LanguageSwitcher() {
   const locale = useLocale();
-  const router = useRouter();
 
   function switchLocale(newLocale: string) {
+    if (newLocale === locale) return;
     document.cookie = `NEXT_LOCALE=${newLocale};path=/;max-age=31536000;SameSite=Lax`;
-    router.refresh();
+    window.location.reload();
   }
 
   return (
