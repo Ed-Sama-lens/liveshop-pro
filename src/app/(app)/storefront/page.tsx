@@ -97,7 +97,7 @@ export default function StorefrontPage() {
   // ─── Fetch Available Products (for publish dialog) ──────────────────────
   const fetchAvailableProducts = useCallback(async () => {
     try {
-      const res = await fetch('/api/products?limit=200&isActive=true');
+      const res = await fetch('/api/products?limit=100&isActive=true');
       const body = await res.json();
       if (body.success) {
         // API returns paginated data — extract items array
