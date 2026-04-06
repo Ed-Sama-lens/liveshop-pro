@@ -97,13 +97,15 @@ export default function StorefrontPage() {
   // ─── Fetch Available Products (for publish dialog) ──────────────────────
   const fetchAvailableProducts = useCallback(async () => {
     try {
-      const res = await fetch('/api/products?limit=200&status=active');
+      const res = await fetch('/api/products?limit=200&isActive=true');
       const body = await res.json();
       if (body.success) {
-        setAvailableProducts(body.data ?? []);
+        // API returns paginated data — extract items array
+        const items = Array.isArray(body.data) ? body.data : [];
+        setAvailableProducts(items);
       }
     } catch {
-      // silently fail — user can retry
+      toast.error('Failed to load available products');
     }
   }, []);
 
@@ -274,7 +276,7 @@ export default function StorefrontPage() {
           <Button
             variant="outline"
             size="sm"
-            render={<a href={`/shop/${branding.shopId}`} target="_blank" rel="noopener noreferrer" />}
+            render={<a href="/shop/nazha-hatyai" target="_blank" rel="noopener noreferrer" />}
           >
             <ExternalLink className="mr-2 size-4" />
             {t('previewStorefront')}
