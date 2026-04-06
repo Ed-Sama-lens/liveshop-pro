@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { del } from '@vercel/blob';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
 import { toAppError, NotFoundError } from '@/lib/errors';
 import { productRepository } from '@/server/repositories/product.repository';
+import { deleteFile } from '@/lib/upload/storage';
 
 interface RouteContext {
   params: Promise<{ id: string; filename: string }>;
@@ -42,12 +42,8 @@ export async function DELETE(
     const updatedImages = product.images.filter((img) => img !== imageUrl);
     await productRepository.update(user.shopId, productId, { images: updatedImages });
 
-    // Delete from Vercel Blob (best-effort)
-    try {
-      await del(imageUrl);
-    } catch {
-      // Blob may not exist; DB update already succeeded
-    }
+    // Delete from R2 (best-effort)
+    await deleteFile(imageUrl);
 
     return NextResponse.json(ok({ images: updatedImages }));
   } catch (err) {

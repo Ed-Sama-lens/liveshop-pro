@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
 import sharp from 'sharp';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
 import { toAppError, NotFoundError, ValidationError } from '@/lib/errors';
 import { productRepository } from '@/server/repositories/product.repository';
+import { saveFile } from '@/lib/upload/storage';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -78,18 +78,16 @@ export async function POST(
         .webp({ quality: 80 })
         .toBuffer();
 
-      const filename = `products/${productId}/${crypto.randomUUID()}.webp`;
-
-      // Upload to Vercel Blob
-      const blob = await put(filename, optimized, {
-        access: 'public',
-        contentType: 'image/webp',
+      // Create a File-like object from optimized buffer for saveFile
+      const optimizedFile = new File([optimized], `${crypto.randomUUID()}.webp`, {
+        type: 'image/webp',
       });
 
-      newUrls.push(blob.url);
+      const result = await saveFile(optimizedFile, `products/${productId}`);
+      newUrls.push(result.url);
     }
 
-    // Immutable update: read current images, concat new, write back
+    // Immutable update: concat new URLs to existing images
     const updatedImages = [...product.images, ...newUrls];
     await productRepository.update(user.shopId, productId, { images: updatedImages });
 
