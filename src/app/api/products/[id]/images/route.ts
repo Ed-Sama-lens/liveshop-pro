@@ -79,9 +79,11 @@ export async function POST(
         .toBuffer();
 
       // Create a File-like object from optimized buffer for saveFile
-      const optimizedFile = new File([optimized], `${crypto.randomUUID()}.webp`, {
-        type: 'image/webp',
-      });
+      const optimizedFile = new File(
+        [new Uint8Array(optimized)],
+        `${crypto.randomUUID()}.webp`,
+        { type: 'image/webp' }
+      );
 
       const result = await saveFile(optimizedFile, `products/${productId}`);
       newUrls.push(result.url);
