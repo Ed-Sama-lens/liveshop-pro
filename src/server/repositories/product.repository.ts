@@ -163,7 +163,7 @@ export const productRepository = Object.freeze({
         orderBy: { createdAt: 'desc' },
         include: {
           category: { select: { id: true, name: true } },
-          _count: { select: { variants: true } },
+          variants: { orderBy: { createdAt: 'asc' } },
         },
       }),
       prisma.product.count({ where }),

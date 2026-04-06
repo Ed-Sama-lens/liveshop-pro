@@ -101,6 +101,7 @@ enum UserRole {
 model Shop {
   id             String   @id @default(cuid())
   name           String
+  slug           String?  @unique
   facebookPageId String?  @unique
   facebookToken  String?  @db.Text // AES-256-GCM encrypted
   defaultCurrency String  @default("THB")
@@ -119,6 +120,7 @@ model Shop {
   branding           ShopBranding?
 
   @@index([facebookPageId])
+  @@index([slug])
 }
 
 model ShopMember {

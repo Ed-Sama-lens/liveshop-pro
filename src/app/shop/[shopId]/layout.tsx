@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db/prisma';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { StorefrontAuthWrapper } from '@/components/storefront/StorefrontAuthWrapper';
 
 interface ShopLayoutProps {
@@ -12,7 +14,12 @@ export async function generateMetadata({
 }: {
   params: Promise<{ shopId: string }>;
 }): Promise<Metadata> {
-  const { shopId } = await params;
+  const { shopId: identifier } = await params;
+  const shopId = await resolveShopId(identifier);
+
+  if (!shopId) {
+    return { title: 'Shop Not Found' };
+  }
 
   const shop = await prisma.shop.findUnique({
     where: { id: shopId },
@@ -40,7 +47,13 @@ export async function generateMetadata({
 }
 
 export default async function ShopLayout({ children, params }: ShopLayoutProps) {
-  const { shopId } = await params;
+  const { shopId: identifier } = await params;
+  const shopId = await resolveShopId(identifier);
+
+  if (!shopId) {
+    notFound();
+  }
+
   const facebookAppId = process.env.FACEBOOK_APP_ID ?? '';
 
   return (
