@@ -1,5 +1,9 @@
 {
   "nav": {
+    "overview": "ภาพรวม",
+    "sales": "การขาย",
+    "management": "จัดการ",
+    "system": "ระบบ",
     "dashboard": "แดชบอร์ด",
     "analytics": "วิเคราะห์",
     "orders": "คำสั่งซื้อ",

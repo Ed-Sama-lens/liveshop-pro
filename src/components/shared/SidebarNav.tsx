@@ -17,26 +17,39 @@ import {
   Layers,
   SearchCheck,
 } from 'lucide-react';
-import type { NavGroup } from '@/types/navigation';
+import type { LucideIcon } from 'lucide-react';
+import type { UserRole } from '@/generated/prisma';
 
-export const NAV_GROUPS: readonly NavGroup[] = [
+export interface NavItemDef {
+  readonly labelKey: string;
+  readonly href: string;
+  readonly icon: LucideIcon;
+  readonly roles: readonly UserRole[];
+}
+
+export interface NavGroupDef {
+  readonly titleKey: string;
+  readonly items: readonly NavItemDef[];
+}
+
+export const NAV_GROUPS: readonly NavGroupDef[] = [
   {
-    title: 'Overview',
+    titleKey: 'overview',
     items: [
       {
-        label: 'Dashboard',
+        labelKey: 'dashboard',
         href: '/dashboard',
         icon: LayoutDashboard,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'],
       },
       {
-        label: 'Analytics',
+        labelKey: 'analytics',
         href: '/analytics',
         icon: BarChart3,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Reports',
+        labelKey: 'reports',
         href: '/reports',
         icon: FileBarChart,
         roles: ['OWNER', 'MANAGER'],
@@ -44,28 +57,28 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    title: 'Sales',
+    titleKey: 'sales',
     items: [
       {
-        label: 'Orders',
+        labelKey: 'orders',
         href: '/orders',
         icon: ShoppingCart,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'],
       },
       {
-        label: 'Order by Product',
+        labelKey: 'orderByProduct',
         href: '/orders/search-by-product',
         icon: SearchCheck,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE'],
       },
       {
-        label: 'Live Selling',
+        labelKey: 'liveSelling',
         href: '/live-selling',
         icon: Radio,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Chat',
+        labelKey: 'chat',
         href: '/chat',
         icon: MessageSquare,
         roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'],
@@ -73,40 +86,40 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    title: 'Management',
+    titleKey: 'management',
     items: [
       {
-        label: 'Inventory',
+        labelKey: 'inventory',
         href: '/inventory',
         icon: Package,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE'],
       },
       {
-        label: 'Customers',
+        labelKey: 'customers',
         href: '/customers',
         icon: Users,
         roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'],
       },
       {
-        label: 'Shipping',
+        labelKey: 'shipping',
         href: '/shipping',
         icon: Truck,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE'],
       },
       {
-        label: 'Payments',
+        labelKey: 'payments',
         href: '/payments',
         icon: CreditCard,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Storefront',
+        labelKey: 'storefront',
         href: '/storefront',
         icon: Store,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Exchange Rates',
+        labelKey: 'exchangeRates',
         href: '/exchange-rates',
         icon: ArrowRightLeft,
         roles: ['OWNER', 'MANAGER'],
@@ -114,28 +127,28 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    title: 'System',
+    titleKey: 'system',
     items: [
       {
-        label: 'Notifications',
+        labelKey: 'notifications',
         href: '/notifications',
         icon: Bell,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'],
       },
       {
-        label: 'Activity Log',
+        labelKey: 'activityLog',
         href: '/activity',
         icon: Activity,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Bulk Operations',
+        labelKey: 'bulkOperations',
         href: '/bulk',
         icon: Layers,
         roles: ['OWNER', 'MANAGER'],
       },
       {
-        label: 'Settings',
+        labelKey: 'settings',
         href: '/settings',
         icon: Settings,
         roles: ['OWNER'],

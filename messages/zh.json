@@ -1,5 +1,9 @@
 {
   "nav": {
+    "overview": "概览",
+    "sales": "销售",
+    "management": "管理",
+    "system": "系统",
     "dashboard": "仪表盘",
     "analytics": "数据分析",
     "orders": "订单",

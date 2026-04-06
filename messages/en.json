@@ -1,5 +1,9 @@
 {
   "nav": {
+    "overview": "Overview",
+    "sales": "Sales",
+    "management": "Management",
+    "system": "System",
     "dashboard": "Dashboard",
     "analytics": "Analytics",
     "orders": "Orders",

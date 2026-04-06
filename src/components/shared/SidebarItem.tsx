@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import type { NavItem } from '@/types/navigation';
+import type { NavItemDef } from './SidebarNav';
 
 interface SidebarItemProps {
-  readonly item: NavItem;
+  readonly item: NavItemDef;
+  readonly label: string;
 }
 
-export function SidebarItem({ item }: SidebarItemProps) {
+export function SidebarItem({ item, label }: SidebarItemProps) {
   const pathname = usePathname();
   const isActive = pathname.startsWith(item.href);
   const Icon = item.icon;
@@ -25,7 +26,7 @@ export function SidebarItem({ item }: SidebarItemProps) {
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
-      <span>{item.label}</span>
+      <span>{label}</span>
     </Link>
   );
 }

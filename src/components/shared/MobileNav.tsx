@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
@@ -14,6 +15,7 @@ interface MobileNavProps {
 
 export function MobileNav({ userRole }: MobileNavProps) {
   const [open, setOpen] = useState(false);
+  const t = useTranslations('nav');
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -34,13 +36,13 @@ export function MobileNav({ userRole }: MobileNavProps) {
             if (visibleItems.length === 0) return null;
 
             return (
-              <div key={group.title}>
+              <div key={group.titleKey}>
                 <h2 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.title}
+                  {t(group.titleKey)}
                 </h2>
                 <div className="space-y-1" onClick={() => setOpen(false)}>
                   {visibleItems.map((item) => (
-                    <SidebarItem key={item.href} item={item} />
+                    <SidebarItem key={item.href} item={item} label={t(item.labelKey)} />
                   ))}
                 </div>
               </div>
