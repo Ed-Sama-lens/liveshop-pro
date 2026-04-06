@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { NotFoundError, toAppError } from '@/lib/errors';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { updateCartItemSchema } from '@/lib/validation/storefront.schemas';
 import { cartRepository } from '@/server/repositories/cart.repository';
 
@@ -14,7 +15,9 @@ export async function PATCH(
   { params }: { params: Promise<{ shopId: string; itemId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { itemId } = await params;
+    const { shopId: identifier, itemId } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
     const customerId = getCustomerId(request);
     if (!customerId) {
       return NextResponse.json(error('Customer identification required'), { status: 401 });
@@ -40,7 +43,9 @@ export async function DELETE(
   { params }: { params: Promise<{ shopId: string; itemId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { itemId } = await params;
+    const { shopId: identifier, itemId } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
     const customerId = getCustomerId(request);
     if (!customerId) {
       return NextResponse.json(error('Customer identification required'), { status: 401 });

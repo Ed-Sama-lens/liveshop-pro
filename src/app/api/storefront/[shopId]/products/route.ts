@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, paginated, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { toAppError, NotFoundError } from '@/lib/errors';
 import { storefrontProductQuerySchema } from '@/lib/validation/storefront.schemas';
 import { storefrontRepository } from '@/server/repositories/storefront.repository';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 
 // GET /api/storefront/[shopId]/products — public product listing
 export async function GET(
@@ -10,7 +11,9 @@ export async function GET(
   { params }: { params: Promise<{ shopId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { shopId } = await params;
+    const { shopId: identifier } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
     const searchParams = Object.fromEntries(request.nextUrl.searchParams);
     const queryResult = storefrontProductQuerySchema.safeParse(searchParams);
 

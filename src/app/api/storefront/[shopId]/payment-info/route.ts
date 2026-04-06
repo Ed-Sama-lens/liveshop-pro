@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { NotFoundError, toAppError } from '@/lib/errors';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { prisma } from '@/lib/db/prisma';
 
 // GET /api/storefront/[shopId]/payment-info — public payment info for checkout
@@ -9,7 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ shopId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { shopId } = await params;
+    const { shopId: identifier } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
 
     const branding = await prisma.shopBranding.findUnique({
       where: { shopId },

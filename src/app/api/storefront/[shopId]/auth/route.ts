@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
+import { NotFoundError, toAppError } from '@/lib/errors';
 import { prisma } from '@/lib/db/prisma';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { z } from 'zod';
 
 const facebookAuthSchema = z.object({
@@ -20,7 +22,9 @@ export async function POST(
   { params }: { params: Promise<{ shopId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { shopId } = await params;
+    const { shopId: identifier } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
 
     const body = await request.json();
     const parsed = facebookAuthSchema.safeParse(body);
@@ -43,15 +47,6 @@ export async function POST(
       return NextResponse.json(error('Could not retrieve Facebook profile'), { status: 401 });
     }
 
-    // Verify shop exists
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-      select: { id: true },
-    });
-
-    if (!shop) {
-      return NextResponse.json(error('Shop not found'), { status: 404 });
-    }
 
     // Find or create customer by facebookId in this shop
     const existing = await prisma.customer.findFirst({
@@ -86,7 +81,8 @@ export async function POST(
       facebookId: profile.id,
       isNew: true,
     }), { status: 201 });
-  } catch {
-    return NextResponse.json(error('Authentication failed'), { status: 500 });
+  } catch (err) {
+    const appErr = toAppError(err);
+    return NextResponse.json(error(appErr.message), { status: appErr.status });
   }
 }

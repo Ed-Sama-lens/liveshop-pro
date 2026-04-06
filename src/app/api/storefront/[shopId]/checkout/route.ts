@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { NotFoundError, toAppError } from '@/lib/errors';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { storefrontCheckoutSchema } from '@/lib/validation/settings.schemas';
 import { checkoutRepository } from '@/server/repositories/checkout.repository';
 
@@ -14,7 +15,9 @@ export async function POST(
   { params }: { params: Promise<{ shopId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { shopId } = await params;
+    const { shopId: identifier } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
     const customerId = getCustomerId(request);
     if (!customerId) {
       return NextResponse.json(error('Customer identification required'), { status: 401 });

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { NotFoundError, toAppError } from '@/lib/errors';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { brandingRepository } from '@/server/repositories/branding.repository';
-import { prisma } from '@/lib/db/prisma';
 
 // GET /api/storefront/[shopId]/branding — public shop branding
 export async function GET(
@@ -10,13 +10,12 @@ export async function GET(
   { params }: { params: Promise<{ shopId: string }> }
 ): Promise<NextResponse> {
   try {
-    const { shopId } = await params;
-    const [branding, shop] = await Promise.all([
-      brandingRepository.findByShopId(shopId),
-      prisma.shop.findUnique({ where: { id: shopId }, select: { defaultCurrency: true } }),
-    ]);
+    const { shopId: identifier } = await params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
 
-    const defaultCurrency = shop?.defaultCurrency ?? 'THB';
+    const branding = await brandingRepository.findByShopId(shopId);
+    const defaultCurrency = 'THB'; // Default currency, branding repository should provide it if available
 
     if (!branding) {
       return NextResponse.json(ok({ shopId, shopName: null, logo: null, banner: null, primaryColor: null, accentColor: null, description: null, defaultCurrency }));

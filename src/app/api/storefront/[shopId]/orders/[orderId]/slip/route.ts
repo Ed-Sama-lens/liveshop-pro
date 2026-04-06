@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, error } from '@/lib/api/response';
-import { toAppError } from '@/lib/errors';
+import { NotFoundError, toAppError } from '@/lib/errors';
+import { resolveShopId } from '@/lib/shop/resolve-shop';
 import { prisma } from '@/lib/db/prisma';
 import { saveFile } from '@/lib/upload/storage';
 import { notifyPaymentReceived } from '@/server/services/notification.service';
@@ -16,7 +17,9 @@ export async function POST(
   context: RouteContext
 ): Promise<NextResponse> {
   try {
-    const { shopId, orderId } = await context.params;
+    const { shopId: identifier, orderId } = await context.params;
+    const shopId = await resolveShopId(identifier);
+    if (!shopId) throw new NotFoundError('Shop not found');
     const customerId = request.headers.get('x-customer-id');
 
     if (!customerId) {
