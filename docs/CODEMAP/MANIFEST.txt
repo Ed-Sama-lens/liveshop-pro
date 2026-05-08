@@ -13,6 +13,7 @@ Total docs: 10 + README + this MANIFEST
 08-i18n-currency.md      — next-intl cookie locale + MYR currency hardcoding
 09-components.md         — UI primitives, Sidebar pattern, form patterns
 10-ops-deploy.md         — Vercel + Railway + R2 deploy, env vars, rollback
+13-unified-commerce-inbox.md — /sale MVP + platform-agnostic inbox foundation (added 2026-05-09)
 
 Status: liveshop-pro is in production at nazhahatyai.com.
 Recent shipped:
@@ -22,6 +23,14 @@ Recent shipped:
 - Currency MYR/RM (replaced THB/฿)
 - Legal pages (/privacy /terms /data-deletion) for FB App Review
 - Cloudflare Email Routing (contact@nazhahatyai.com)
+- DB credential rotation 2026-05-09 (ALTER USER, sentinel + Vercel env sync)
+- Unified Commerce Inbox + /sale MVP foundation (Commits 0/1/2A/2B):
+  - 7 new tables (Conversation, ChannelIdentity, Message, CommentParseLog,
+    BroadcastProduct, Booking, BookingHistory)
+  - 9 new enums + MessageDirection.SYSTEM extension
+  - StockReservation.bookingId nullable column
+  - bookingRepository.confirm() + cancel() runtime
+  - 55 pure-fn unit tests for booking-rules helpers
 
 Pending:
 - Facebook App Review submission

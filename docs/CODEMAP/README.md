@@ -20,6 +20,9 @@ E-commerce live-selling SaaS reference. Read this BEFORE answering "where is X" 
 | 08 | [i18n-currency.md](./08-i18n-currency.md) | next-intl cookie locale + MYR currency |
 | 09 | [components.md](./09-components.md) | UI components, shadcn primitives, feature dirs |
 | 10 | [ops-deploy.md](./10-ops-deploy.md) | Vercel deploy, Railway DB, env vars, rollback |
+| 13 | [unified-commerce-inbox.md](./13-unified-commerce-inbox.md) | /sale MVP + platform-agnostic inbox foundation (Conversation/ChannelIdentity/Message + Booking) |
+
+(Docs 11-12 reserved for future phases.)
 
 ---
 
