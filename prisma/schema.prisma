@@ -23,11 +23,14 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  accounts    Account[]
-  sessions    Session[]
-  shopMembers ShopMember[]
-  assignedChats Chat[]       @relation("AssignedChats")
-  loginEvents LoginEvent[]
+  accounts              Account[]
+  sessions              Session[]
+  shopMembers           ShopMember[]
+  assignedChats         Chat[]           @relation("AssignedChats")
+  loginEvents           LoginEvent[]
+  assignedConversations Conversation[]   @relation("AssignedConversations")
+  bookingsCreated       Booking[]        @relation("BookingsCreated")
+  bookingHistoryChanges BookingHistory[]
 
   @@index([facebookId])
   @@index([email])
@@ -99,15 +102,15 @@ enum UserRole {
 // ─── Shop ──────────────────────────────────────────────────────────────────
 
 model Shop {
-  id             String   @id @default(cuid())
-  name           String
-  slug           String?  @unique
-  facebookPageId String?  @unique
-  facebookToken  String?  @db.Text // AES-256-GCM encrypted
-  defaultCurrency String  @default("THB")
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  slug            String?  @unique
+  facebookPageId  String?  @unique
+  facebookToken   String?  @db.Text // AES-256-GCM encrypted
+  defaultCurrency String   @default("THB")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   members            ShopMember[]
   products           Product[]
@@ -118,6 +121,10 @@ model Shop {
   storefrontProducts StorefrontProduct[]
   carts              Cart[]
   branding           ShopBranding?
+  conversations      Conversation[]
+  channelIdentities  ChannelIdentity[]
+  messages           Message[]
+  bookings           Booking[]
 
   @@index([facebookPageId])
   @@index([slug])
@@ -154,12 +161,13 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  category           ProductCategory?   @relation(fields: [categoryId], references: [id])
+  shop               Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  category           ProductCategory?    @relation(fields: [categoryId], references: [id])
   variants           ProductVariant[]
   orderItems         OrderItem[]
   storefrontProducts StorefrontProduct[]
   cartItems          CartItem[]
+  broadcastProducts  BroadcastProduct[]
 
   @@unique([shopId, stockCode])
   @@index([shopId])
@@ -191,10 +199,12 @@ model ProductVariant {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  product      Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
-  orderItems   OrderItem[]
-  reservations StockReservation[]
-  cartItems    CartItem[]
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems        OrderItem[]
+  reservations      StockReservation[]
+  cartItems         CartItem[]
+  broadcastProducts BroadcastProduct[]
+  parseLogMatches   CommentParseLog[]
 
   @@unique([productId, sku])
   @@index([productId])
@@ -204,44 +214,50 @@ model StockReservation {
   id         String    @id @default(cuid())
   variantId  String
   orderId    String?
+  bookingId  String?
   quantity   Int
   expiresAt  DateTime
   releasedAt DateTime?
   createdAt  DateTime  @default(now())
 
   variant ProductVariant @relation(fields: [variantId], references: [id])
+  booking Booking?       @relation(fields: [bookingId], references: [id])
 
   @@index([variantId])
   @@index([expiresAt])
+  @@index([bookingId])
 }
 
 // ─── Customers ─────────────────────────────────────────────────────────────
 
 model Customer {
-  id            String       @id @default(cuid())
+  id            String        @id @default(cuid())
   shopId        String
   facebookId    String?
   name          String
   phone         String?
   email         String?
-  address       String?      @db.Text
+  address       String?       @db.Text
   district      String?
   province      String?
   postalCode    String?
   labels        String[]
   shippingType  ShippingType?
-  notes         String?      @db.Text
-  isBanned      Boolean      @default(false)
+  notes         String?       @db.Text
+  isBanned      Boolean       @default(false)
   bannedReason  String?
-  channel       SaleChannel  @default(FACEBOOK)
-  lifetimeValue Decimal      @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  channel       SaleChannel   @default(FACEBOOK)
+  lifetimeValue Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  shop   Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  orders Order[]
-  chats  Chat[]
-  carts  Cart[]
+  shop              Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  chats             Chat[]
+  carts             Cart[]
+  conversations     Conversation[]
+  channelIdentities ChannelIdentity[]
+  bookings          Booking[]
 
   @@index([shopId])
   @@index([facebookId])
@@ -287,12 +303,13 @@ model Order {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  shop     Shop         @relation(fields: [shopId], references: [id])
-  customer Customer     @relation(fields: [customerId], references: [id])
-  items    OrderItem[]
-  payment  Payment?
-  shipping Shipment?
-  auditLog OrderAudit[]
+  shop                  Shop         @relation(fields: [shopId], references: [id])
+  customer              Customer     @relation(fields: [customerId], references: [id])
+  items                 OrderItem[]
+  payment               Payment?
+  shipping              Shipment?
+  auditLog              OrderAudit[]
+  convertedFromBookings Booking[]
 
   @@unique([shopId, orderNumber])
   @@index([shopId])
@@ -451,6 +468,7 @@ model ChatMessage {
 enum MessageDirection {
   INBOUND
   OUTBOUND
+  SYSTEM
 }
 
 // ─── Live Sessions ─────────────────────────────────────────────────────────
@@ -470,7 +488,11 @@ model LiveSession {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  shop Shop @relation(fields: [shopId], references: [id])
+  shop              Shop               @relation(fields: [shopId], references: [id])
+  conversations     Conversation[]
+  messages          Message[]
+  broadcastProducts BroadcastProduct[]
+  bookings          Booking[]
 
   @@index([shopId])
   @@index([status])
@@ -538,16 +560,16 @@ model CartItem {
 // ─── Notifications ────────────────────────────────────────────────────────
 
 model Notification {
-  id        String             @id @default(cuid())
+  id        String           @id @default(cuid())
   shopId    String
   userId    String?
   type      NotificationType
   title     String
   body      String
   link      String?
-  isRead    Boolean            @default(false)
+  isRead    Boolean          @default(false)
   readAt    DateTime?
-  createdAt DateTime           @default(now())
+  createdAt DateTime         @default(now())
 
   @@index([shopId, isRead])
   @@index([shopId, createdAt])
@@ -566,14 +588,14 @@ enum NotificationType {
 // ─── Webhooks ─────────────────────────────────────────────────────────────
 
 model Webhook {
-  id        String         @id @default(cuid())
+  id        String   @id @default(cuid())
   shopId    String
   url       String
   secret    String
   events    String[]
-  isActive  Boolean        @default(true)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   logs WebhookLog[]
 
@@ -582,16 +604,16 @@ model Webhook {
 }
 
 model WebhookLog {
-  id          String   @id @default(cuid())
-  webhookId   String
-  event       String
-  payload     Json
-  statusCode  Int?
-  response    String?  @db.Text
-  success     Boolean  @default(false)
-  attempts    Int      @default(1)
-  error       String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  webhookId  String
+  event      String
+  payload    Json
+  statusCode Int?
+  response   String?  @db.Text
+  success    Boolean  @default(false)
+  attempts   Int      @default(1)
+  error      String?
+  createdAt  DateTime @default(now())
 
   webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
@@ -661,4 +683,304 @@ enum Currency {
   THB
   MYR
   SGD
+}
+
+// ─── Unified Commerce Inbox ───────────────────────────────────────────────
+//
+// Platform-agnostic foundation for /sale live-selling + Messenger inbox +
+// Facebook Live/Post comments + WhatsApp Cloud API + Telegram Bot.
+//
+// Phase 1: schema only. No runtime, no webhook, no parser, no UI.
+// Legacy Chat + ChatMessage models stay intact (FB-only legacy).
+// New code uses Conversation + ChannelIdentity + Message.
+//
+// See docs/superpowers/2026-04-06-sale-mvp-dissent.md.
+
+enum Platform {
+  FACEBOOK
+  MESSENGER
+  WHATSAPP
+  TELEGRAM
+  MANUAL
+}
+
+enum ConversationSource {
+  LIVE_COMMENT
+  PAGE_INBOX
+  POST_COMMENT
+  WHATSAPP_CHAT
+  TELEGRAM_CHAT
+  MANUAL
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING_REVIEW
+  PENDING_PAYMENT
+  ORDER_CREATED
+  CLOSED
+  SPAM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+  PRODUCT_CARD
+  ORDER_SUMMARY
+  PAYMENT_PROOF
+  TEMPLATE
+  SYSTEM
+}
+
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  IGNORED
+}
+
+enum ParseStatus {
+  UNPARSED
+  PARSED_PENDING_REVIEW
+  PARSED_AUTO_BOOKED
+  PARSED_NO_MATCH
+  IGNORED
+}
+
+enum ParseAction {
+  BOOK
+  CANCEL
+  INCREMENT
+  DECREMENT
+  QUERY
+}
+
+enum BookingStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  CONVERTED_TO_ORDER
+}
+
+enum BookingSource {
+  MANUAL
+  LIVE_COMMENT
+  PAGE_INBOX
+  POST_COMMENT
+  WHATSAPP_CHAT
+  TELEGRAM_CHAT
+  IMPORT
+  SYSTEM
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  shopId        String
+  customerId    String?
+  source        ConversationSource
+  status        ConversationStatus @default(OPEN)
+  assignedToId  String?
+  liveSessionId String?
+  lastMessageAt DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  shop        Shop         @relation(fields: [shopId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  assignedTo  User?        @relation("AssignedConversations", fields: [assignedToId], references: [id])
+  liveSession LiveSession? @relation(fields: [liveSessionId], references: [id])
+
+  messages Message[]
+  bookings Booking[]
+
+  @@index([shopId, status, lastMessageAt])
+  @@index([customerId])
+  @@index([liveSessionId])
+  @@index([assignedToId])
+}
+
+model ChannelIdentity {
+  id               String    @id @default(cuid())
+  shopId           String
+  customerId       String?
+  platform         Platform
+  platformUserId   String
+  platformThreadId String?
+  displayName      String?
+  avatarUrl        String?
+  phone            String?
+  profileUrl       String?
+  metadata         Json?
+  verifiedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  shop     Shop      @relation(fields: [shopId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  messages Message[]
+  bookings Booking[]
+
+  @@unique([shopId, platform, platformUserId])
+  @@index([shopId, platform])
+  @@index([customerId])
+}
+
+model Message {
+  id                   String             @id @default(cuid())
+  shopId               String
+  conversationId       String?
+  channelIdentityId    String?
+  liveSessionId        String?
+  platform             Platform
+  source               ConversationSource
+  direction            MessageDirection
+  type                 MessageType        @default(TEXT)
+  externalMessageId    String?
+  externalThreadId     String?
+  senderPlatformId     String?
+  senderName           String?
+  text                 String?            @db.Text
+  mediaUrls            String[]           @default([])
+  rawPayload           Json?
+  rawPayloadRedactedAt DateTime?
+  retentionUntil       DateTime?
+  status               MessageStatus      @default(RECEIVED)
+  parseStatus          ParseStatus        @default(UNPARSED)
+  receivedAt           DateTime?
+  sentAt               DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  shop            Shop             @relation(fields: [shopId], references: [id])
+  conversation    Conversation?    @relation(fields: [conversationId], references: [id])
+  channelIdentity ChannelIdentity? @relation(fields: [channelIdentityId], references: [id])
+  liveSession     LiveSession?     @relation(fields: [liveSessionId], references: [id])
+
+  parseLogs      CommentParseLog[]
+  sourceBookings Booking[]
+
+  @@unique([shopId, platform, externalMessageId])
+  @@index([shopId, receivedAt])
+  @@index([conversationId, createdAt])
+  @@index([channelIdentityId])
+  @@index([liveSessionId])
+  @@index([parseStatus])
+  @@index([status])
+}
+
+model CommentParseLog {
+  id               String       @id @default(cuid())
+  messageId        String
+  parserVersion    String
+  matchedCode      String?
+  matchedVariantId String?
+  parsedQuantity   Int?
+  parsedAction     ParseAction?
+  confidence       Decimal?     @db.Decimal(3, 2)
+  notes            String?
+  createdAt        DateTime     @default(now())
+
+  message        Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  matchedVariant ProductVariant? @relation(fields: [matchedVariantId], references: [id])
+
+  @@index([messageId])
+}
+
+model BroadcastProduct {
+  id            String   @id @default(cuid())
+  liveSessionId String
+  productId     String
+  variantId     String?
+  displayCode   String
+  displayOrder  Int      @default(0)
+  priceOverride Decimal? @db.Decimal(12, 2)
+  isPinned      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  liveSession LiveSession     @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id])
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+
+  bookings Booking[]
+
+  @@unique([liveSessionId, displayCode])
+  @@index([liveSessionId, displayOrder])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Booking {
+  id                 String        @id @default(cuid())
+  shopId             String
+  liveSessionId      String
+  broadcastProductId String
+  customerId         String
+  conversationId     String?
+  channelIdentityId  String?
+  sourceMessageId    String?
+  quantity           Int
+  unitPrice          Decimal       @db.Decimal(12, 2)
+  status             BookingStatus @default(PENDING_REVIEW)
+  source             BookingSource @default(MANUAL)
+  notes              String?
+  idempotencyKey     String?
+  createdById        String?
+  convertedOrderId   String?
+  expiresAt          DateTime?
+  releasedAt         DateTime?
+  releaseReason      String?
+  cancellationReason String?
+  confirmedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  shop             Shop             @relation(fields: [shopId], references: [id])
+  liveSession      LiveSession      @relation(fields: [liveSessionId], references: [id])
+  broadcastProduct BroadcastProduct @relation(fields: [broadcastProductId], references: [id])
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  conversation     Conversation?    @relation(fields: [conversationId], references: [id])
+  channelIdentity  ChannelIdentity? @relation(fields: [channelIdentityId], references: [id])
+  sourceMessage    Message?         @relation(fields: [sourceMessageId], references: [id])
+  createdBy        User?            @relation("BookingsCreated", fields: [createdById], references: [id])
+  convertedOrder   Order?           @relation(fields: [convertedOrderId], references: [id])
+
+  history           BookingHistory[]
+  stockReservations StockReservation[]
+
+  @@unique([shopId, idempotencyKey])
+  @@index([shopId, status])
+  @@index([liveSessionId, status])
+  @@index([broadcastProductId, status])
+  @@index([customerId, status])
+  @@index([sourceMessageId])
+  @@index([conversationId])
+  @@index([channelIdentityId])
+  @@index([convertedOrderId])
+}
+
+model BookingHistory {
+  id          String         @id @default(cuid())
+  bookingId   String
+  fromStatus  BookingStatus?
+  toStatus    BookingStatus
+  changedById String?
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  changedBy User?   @relation(fields: [changedById], references: [id])
+
+  @@index([bookingId, createdAt])
+  @@index([changedById])
 }
