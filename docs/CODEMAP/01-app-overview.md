@@ -27,8 +27,8 @@
 ## Deploy
 
 - **App**: Vercel (auto-deploy on `master` push)
-- **DB**: Railway PostgreSQL (`junction.proxy.rlwy.net:18292/railway`)
-- **Redis**: Railway Redis (`junction.proxy.rlwy.net:13900`)
+- **DB**: Railway PostgreSQL — connection via `<RAILWAY_DATABASE_URL>` env var. Credential rotated 2026-05-09 after accidental chat exposure.
+- **Redis**: Railway Redis — connection via `<RAILWAY_REDIS_URL>` env var.
 - **Storage**: Cloudflare R2 bucket `liveshop-images`, public via `images.nazhahatyai.com`
 - **Email routing**: Cloudflare Email Routing (`contact@nazhahatyai.com` → Gmail forward)
 

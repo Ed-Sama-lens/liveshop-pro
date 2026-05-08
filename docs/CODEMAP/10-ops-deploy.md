@@ -5,7 +5,7 @@
 | Service | Vendor | Purpose |
 |---|---|---|
 | App | Vercel | Next.js auto-deploy from `master` |
-| Database | Railway | PostgreSQL (`junction.proxy.rlwy.net:18292/railway`) |
+| Database | Railway | PostgreSQL — connection via `<RAILWAY_DATABASE_URL>`. Rotated 2026-05-09. |
 | Redis | Railway | Bull queue, rate limit |
 | Storage | Cloudflare R2 | Image assets (`images.nazhahatyai.com`) |
 | Domain | Cloudflare | DNS + email routing |
