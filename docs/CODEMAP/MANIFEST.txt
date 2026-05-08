@@ -1,0 +1,35 @@
+LiveShop Pro Codemap — MANIFEST
+
+Inception: 2026-04-06 (post-PR storefront/r2/i18n/currency stabilization)
+Total docs: 10 + README + this MANIFEST
+
+01-app-overview.md       — tech stack, layout, env vars, build scripts
+02-pages-routes.md       — admin/legal/storefront/auth route groups
+03-api-routes.md         — 80 API endpoints, validation, response envelopes
+04-database.md           — 29 Prisma models, indexes, repos, migration workflow
+05-auth-rbac.md          — next-auth (admin) + FB Login (customer) + ROUTE_PERMISSIONS
+06-storefront-checkout.md — slug resolution, customer flow, order placement
+07-storage-r2.md         — Cloudflare R2 setup, saveFile/deleteFile, CSP
+08-i18n-currency.md      — next-intl cookie locale + MYR currency hardcoding
+09-components.md         — UI primitives, Sidebar pattern, form patterns
+10-ops-deploy.md         — Vercel + Railway + R2 deploy, env vars, rollback
+
+Status: liveshop-pro is in production at nazhahatyai.com.
+Recent shipped:
+- Storefront slug URLs (e.g. /shop/nazha-hatyai)
+- Cloudflare R2 image upload (replaced filesystem)
+- CSP + FB SDK login fix
+- Currency MYR/RM (replaced THB/฿)
+- Legal pages (/privacy /terms /data-deletion) for FB App Review
+- Cloudflare Email Routing (contact@nazhahatyai.com)
+
+Pending:
+- Facebook App Review submission
+- pages_messaging permission (requires Messenger product added in FB App)
+- UI polish per Boss feedback
+- Telegram notification decision
+- Health check endpoint
+- CI workflow
+
+Update protocol: refresh affected doc after every shipped feature touching its scope.
+Bug fixes that don't change behavior → no codemap update.
