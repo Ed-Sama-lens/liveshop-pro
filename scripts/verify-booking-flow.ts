@@ -50,6 +50,12 @@ const PROD_HOST_DENY_LIST = [
   'rlwy.net',
 ] as const;
 
+const ALLOWED_LOCAL_HOSTS = ['localhost', '127.0.0.1'] as const;
+const REQUIRED_DB_NAME = 'liveshop_pro';
+const ALLOWED_DB_PORTS = ['5432']; // extend later when docker-compose changes port
+
+const FIXTURE_PREFIX = 'verify-booking-flow';
+
 function assertNonProdDatabase(): { url: string; runId: string; sanitizedHost: string } {
   if (process.env.CONFIRM_NON_PROD_DB !== 'true') {
     console.error(
@@ -73,7 +79,8 @@ function assertNonProdDatabase(): { url: string; runId: string; sanitizedHost: s
     process.exit(2);
   }
 
-  const sanitizedHost = parsed.hostname + ':' + (parsed.port || '5432');
+  const port = parsed.port || '5432';
+  const sanitizedHost = parsed.hostname + ':' + port;
   const dbName = parsed.pathname.replace(/^\//, '');
   const sanitizedDb = dbName.length > 0 ? dbName : '<unspecified>';
 
@@ -93,19 +100,55 @@ function assertNonProdDatabase(): { url: string; runId: string; sanitizedHost: s
     process.exit(2);
   }
 
-  const runId = process.env.VERIFY_BOOKING_FLOW_RUN_ID
-    ?? `verify-${Date.now().toString(36)}`;
+  // Stricter local-only guard for first E2E run.
+  // To support staging/dev later, gate this with ALLOW_STAGING_DB=true.
+  const allowStaging = process.env.ALLOW_STAGING_DB === 'true';
+  if (!allowStaging) {
+    const isLocalHost = (ALLOWED_LOCAL_HOSTS as readonly string[]).includes(parsed.hostname);
+    if (!isLocalHost) {
+      console.error(
+        `[GUARD] Refusing to run: DATABASE_URL host '${parsed.hostname}' is not local. Set ALLOW_STAGING_DB=true to opt in to non-local non-prod databases.`
+      );
+      process.exit(2);
+    }
+    if (dbName !== REQUIRED_DB_NAME) {
+      console.error(
+        `[GUARD] Refusing to run: DB name '${sanitizedDb}' does not equal required '${REQUIRED_DB_NAME}' for local verification.`
+      );
+      process.exit(2);
+    }
+    if (!ALLOWED_DB_PORTS.includes(port)) {
+      console.error(
+        `[GUARD] Refusing to run: DB port '${port}' not in allowed local list [${ALLOWED_DB_PORTS.join(', ')}].`
+      );
+      process.exit(2);
+    }
+  }
 
-  if (!/^[A-Za-z0-9-]{4,64}$/.test(runId)) {
+  const rawRunId = process.env.VERIFY_BOOKING_FLOW_RUN_ID
+    ?? `${FIXTURE_PREFIX}-${Date.now().toString(36)}`;
+
+  if (!/^[A-Za-z0-9-]{4,64}$/.test(rawRunId)) {
     console.error(
-      `[GUARD] Refusing to run: VERIFY_BOOKING_FLOW_RUN_ID must match /^[A-Za-z0-9-]{4,64}$/, got '${runId}'.`
+      `[GUARD] Refusing to run: VERIFY_BOOKING_FLOW_RUN_ID must match /^[A-Za-z0-9-]{4,64}$/, got '${rawRunId}'.`
+    );
+    process.exit(2);
+  }
+
+  // Normalize: ensure the fixture prefix appears so cleanup can use a tight
+  // startsWith filter with high confidence.
+  const runId = rawRunId.startsWith(FIXTURE_PREFIX) ? rawRunId : `${FIXTURE_PREFIX}-${rawRunId}`;
+
+  if (runId.length > 64) {
+    console.error(
+      `[GUARD] Refusing to run: normalized runId '${runId}' exceeds 64 chars.`
     );
     process.exit(2);
   }
 
   console.log('[GUARD] Production safety checks passed.');
   console.log(`[GUARD] DB host: ${sanitizedHost} db=${sanitizedDb}`);
-  console.log(`[GUARD] Run ID: ${runId}`);
+  console.log(`[GUARD] Run ID: ${runId} (prefix=${FIXTURE_PREFIX}, mode=${allowStaging ? 'STAGING' : 'LOCAL'})`);
   return { url, runId, sanitizedHost };
 }
 
@@ -158,22 +201,26 @@ async function main(): Promise<void> {
   console.log('=== Fixture setup ===');
 
   // Stable IDs derived from runId for traceability.
-  const idShop = `shop-${runId}`;
-  const idShop2 = `shop2-${runId}`;
-  const idUser = `user-${runId}`;
-  const idCustomer = `cust-${runId}`;
-  const idProduct = `prod-${runId}`;
-  const idProduct2 = `prod2-${runId}`;
-  const idVariant = `var-${runId}`;
-  const idVariant2 = `var2-${runId}`;
-  const idLiveSession = `live-${runId}`;
-  const idBP = `bp-${runId}`;
-  const idBPCrossShop = `bpx-${runId}`;
-  const idBookingPending = `book-pend-${runId}`;
-  const idBookingMulti = `book-multi-${runId}`;
-  const idBookingInsuf = `book-insuf-${runId}`;
-  const idBookingCrossShop = `book-xshop-${runId}`;
-  const idBookingConverted = `book-conv-${runId}`;
+  // Format: ${runId}--${role}  →  every fixture id starts with runId so
+  // cleanup can use `startsWith: runId` for tight targeting.
+  // (cuid columns are TEXT/varchar in Postgres so length is not a concern up to ~120 chars.)
+  const idShop = `${runId}--shop`;
+  const idShop2 = `${runId}--shop2`;
+  const idUser = `${runId}--user`;
+  const idCustomer = `${runId}--cust`;
+  const idProduct = `${runId}--prod`;
+  const idProduct2 = `${runId}--prod2`;
+  const idVariant = `${runId}--var`;
+  const idVariant2 = `${runId}--var2`;
+  const idLiveSession = `${runId}--live`;
+  const idBP = `${runId}--bp`;
+  const idBPCrossShop = `${runId}--bpx`;
+  const idBookingPendingCancel = `${runId}--book-pend-cancel`;
+  const idBookingPending = `${runId}--book-pend`;
+  const idBookingMulti = `${runId}--book-multi`;
+  const idBookingInsuf = `${runId}--book-insuf`;
+  const idBookingCrossShop = `${runId}--book-xshop`;
+  const idBookingConverted = `${runId}--book-conv`;
 
   let setupOk = false;
 
@@ -343,6 +390,20 @@ async function main(): Promise<void> {
         quantity: 1,
         unitPrice: '10.00',
         status: 'CONVERTED_TO_ORDER',
+        source: 'MANUAL',
+      },
+    });
+    // PENDING_REVIEW booking earmarked for direct-cancel (no stock touch test).
+    await prisma.booking.create({
+      data: {
+        id: idBookingPendingCancel,
+        shopId: idShop,
+        liveSessionId: idLiveSession,
+        broadcastProductId: idBP,
+        customerId: idCustomer,
+        quantity: 1,
+        unitPrice: '10.00',
+        status: 'PENDING_REVIEW',
         source: 'MANUAL',
       },
     });
@@ -706,7 +767,71 @@ async function main(): Promise<void> {
     record('Test 7 — Cross-shop variant integrity', 'FAIL', (err as Error).message);
   }
 
-  // ── Test 8: Converted booking cannot cancel ──
+  // ── Test 8: Cancel PENDING_REVIEW booking (no stock touch) ──
+  try {
+    const variantBefore = await prisma.productVariant.findUniqueOrThrow({
+      where: { id: idVariant },
+      select: { reservedQty: true },
+    });
+    const reservationsBefore = await prisma.stockReservation.count({
+      where: { bookingId: idBookingPendingCancel },
+    });
+    const historyBefore = await prisma.bookingHistory.count({
+      where: { bookingId: idBookingPendingCancel },
+    });
+
+    const result = await bookingRepository.cancel({
+      bookingId: idBookingPendingCancel,
+      shopId: idShop,
+      changedById: idUser,
+      targetStatus: 'CANCELLED',
+      reason: 'verify-pending-cancel',
+    });
+
+    assert(result.status === 'CANCELLED', `expected CANCELLED, got ${result.status}`);
+    assert(result.stockReleased === false, 'PENDING_REVIEW cancel must NOT release stock');
+    assert(result.releasedQuantity === 0, `releasedQuantity should be 0, got ${result.releasedQuantity}`);
+    assert(result.idempotent === false, 'first cancel should not be idempotent');
+
+    const booking = await prisma.booking.findUniqueOrThrow({ where: { id: idBookingPendingCancel } });
+    assert(booking.status === 'CANCELLED', 'booking.status not updated');
+    assert(booking.cancelledAt !== null, 'cancelledAt not set');
+    assert(
+      booking.cancellationReason === 'verify-pending-cancel',
+      'cancellationReason not stored'
+    );
+
+    const variantAfter = await prisma.productVariant.findUniqueOrThrow({
+      where: { id: idVariant },
+      select: { reservedQty: true },
+    });
+    assert(
+      variantAfter.reservedQty === variantBefore.reservedQty,
+      `reservedQty must NOT change on PENDING_REVIEW cancel: ${variantBefore.reservedQty} → ${variantAfter.reservedQty}`
+    );
+
+    const reservationsAfter = await prisma.stockReservation.count({
+      where: { bookingId: idBookingPendingCancel },
+    });
+    assert(
+      reservationsAfter === reservationsBefore,
+      `StockReservation count must NOT change: ${reservationsBefore} → ${reservationsAfter}`
+    );
+
+    const historyAfter = await prisma.bookingHistory.findMany({
+      where: { bookingId: idBookingPendingCancel },
+      orderBy: { createdAt: 'asc' },
+    });
+    assert(historyAfter.length === historyBefore + 1, `expected 1 new history row, got delta=${historyAfter.length - historyBefore}`);
+    assert(historyAfter[0].fromStatus === 'PENDING_REVIEW', 'fromStatus should be PENDING_REVIEW');
+    assert(historyAfter[0].toStatus === 'CANCELLED', 'toStatus should be CANCELLED');
+
+    record('Test 8 — Cancel PENDING_REVIEW (no stock touch)', 'PASS');
+  } catch (err) {
+    record('Test 8 — Cancel PENDING_REVIEW (no stock touch)', 'FAIL', (err as Error).message);
+  }
+
+  // ── Test 9: Converted booking cannot cancel ──
   try {
     let threw = false;
     let conflict = false;
@@ -734,9 +859,9 @@ async function main(): Promise<void> {
     );
     assert(booking.cancelledAt === null, 'cancelledAt should remain null');
 
-    record('Test 8 — Converted booking cannot cancel', 'PASS');
+    record('Test 9 — Converted booking cannot cancel', 'PASS');
   } catch (err) {
-    record('Test 8 — Converted booking cannot cancel', 'FAIL', (err as Error).message);
+    record('Test 9 — Converted booking cannot cancel', 'FAIL', (err as Error).message);
   }
 
   // ── Cleanup ──
@@ -755,58 +880,90 @@ async function main(): Promise<void> {
 // ─── Cleanup ─────────────────────────────────────────────────────────────
 
 async function runCleanup(prisma: PrismaClient, runId: string): Promise<boolean> {
-  // Delete only rows whose id contains our runId. Reverse-FK order.
-  // Safety: each delete uses `contains: runId` — never targets unrelated rows.
+  // Delete only rows whose id starts with `${runId}--` (or for join-tables,
+  // whose foreign key starts with the same). Reverse-FK order.
+  //
+  // All fixture IDs in this script use the format `${runId}--${role}`, so
+  // a tight `startsWith: ${runId}--` filter catches every fixture row and
+  // nothing else.
+  const fixturePrefix = `${runId}--`;
   const targets: Array<{ name: string; fn: () => Promise<{ count: number }> }> = [
     {
       name: 'BookingHistory',
-      fn: () => prisma.bookingHistory.deleteMany({ where: { booking: { id: { contains: runId } } } }),
+      fn: () =>
+        prisma.bookingHistory.deleteMany({
+          where: { booking: { id: { startsWith: fixturePrefix } } },
+        }),
     },
     {
       name: 'StockReservation',
-      fn: () => prisma.stockReservation.deleteMany({ where: { OR: [
-        { bookingId: { contains: runId } },
-        { variantId: { contains: runId } },
-      ] } }),
+      fn: () =>
+        prisma.stockReservation.deleteMany({
+          where: {
+            OR: [
+              { bookingId: { startsWith: fixturePrefix } },
+              { variantId: { startsWith: fixturePrefix } },
+            ],
+          },
+        }),
     },
     {
       name: 'Booking',
-      fn: () => prisma.booking.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.booking.deleteMany({ where: { id: { startsWith: fixturePrefix } } }),
     },
     {
       name: 'BroadcastProduct',
-      fn: () => prisma.broadcastProduct.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.broadcastProduct.deleteMany({
+          where: { id: { startsWith: fixturePrefix } },
+        }),
     },
     {
       name: 'LiveSession',
-      fn: () => prisma.liveSession.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.liveSession.deleteMany({
+          where: { id: { startsWith: fixturePrefix } },
+        }),
     },
     {
       name: 'ProductVariant',
-      fn: () => prisma.productVariant.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.productVariant.deleteMany({
+          where: { id: { startsWith: fixturePrefix } },
+        }),
     },
     {
       name: 'Product',
-      fn: () => prisma.product.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.product.deleteMany({ where: { id: { startsWith: fixturePrefix } } }),
     },
     {
       name: 'Customer',
-      fn: () => prisma.customer.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.customer.deleteMany({ where: { id: { startsWith: fixturePrefix } } }),
     },
     {
       name: 'ShopMember',
-      fn: () => prisma.shopMember.deleteMany({ where: { OR: [
-        { shopId: { contains: runId } },
-        { userId: { contains: runId } },
-      ] } }),
+      fn: () =>
+        prisma.shopMember.deleteMany({
+          where: {
+            OR: [
+              { shopId: { startsWith: fixturePrefix } },
+              { userId: { startsWith: fixturePrefix } },
+            ],
+          },
+        }),
     },
     {
       name: 'Shop',
-      fn: () => prisma.shop.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.shop.deleteMany({ where: { id: { startsWith: fixturePrefix } } }),
     },
     {
       name: 'User',
-      fn: () => prisma.user.deleteMany({ where: { id: { contains: runId } } }),
+      fn: () =>
+        prisma.user.deleteMany({ where: { id: { startsWith: fixturePrefix } } }),
     },
   ];
 
@@ -818,7 +975,7 @@ async function runCleanup(prisma: PrismaClient, runId: string): Promise<boolean>
     } catch (err) {
       failed = true;
       console.error(`  cleanup ${t.name} FAILED: ${(err as Error).message}`);
-      console.error(`  HINT: search '${runId}' in ${t.name} table to manually clean up`);
+      console.error(`  HINT: search '${fixturePrefix}' (startsWith) in ${t.name} table to manually clean up`);
     }
   }
   return !failed;
