@@ -502,6 +502,71 @@ async function main(): Promise<void> {
     record('Test 6 — Order RESERVED→CONFIRMED single decrement', 'FAIL', (err as Error).message);
   }
 
+  // ── Test 7: Explicit bookingIds idempotency post-conversion ──
+  // Boss requirement (Commit 2I review): route passes explicit bookingIds.
+  // Re-calling with the same bookingIds AFTER conversion completed must
+  // return the existing Order idempotently (instead of throwing
+  // NO_BOOKINGS_TO_CONVERT). This guards against lost API responses,
+  // double-click retries, etc.
+  try {
+    // Booking A is already CONVERTED_TO_ORDER from Test 1.
+    const result = await bookingRepository.convertToOrder({
+      shopId: idShop,
+      liveSessionId: idLiveSession,
+      customerId: idCustomer,
+      changedById: idUser,
+      bookingIds: [idBookingA], // explicit IDs — triggers early lookup
+    });
+
+    assert(result.idempotent === true, 'expected idempotent=true');
+    assert(result.bookingCount === 1, `expected bookingCount=1, got ${result.bookingCount}`);
+    assert(
+      result.bookingIds.length === 1 && result.bookingIds[0] === idBookingA,
+      'bookingIds should match input'
+    );
+
+    record('Test 7 — Explicit bookingIds idempotency post-conversion', 'PASS', `order=${shortId(result.orderId)}`);
+  } catch (err) {
+    record('Test 7 — Explicit bookingIds idempotency post-conversion', 'FAIL', (err as Error).message);
+  }
+
+  // ── Test 8: Explicit bookingIds with mismatched booking set → integrity error ──
+  try {
+    let threw = false;
+    let code: string | undefined;
+    try {
+      await bookingRepository.convertToOrder({
+        shopId: idShop,
+        liveSessionId: idLiveSession,
+        customerId: idCustomer,
+        changedById: idUser,
+        // Booking A was converted alone in Test 1; idempotency key matches
+        // the existing single-booking order. If we now claim "A and D
+        // were converted together", the existing Order's converted set
+        // wouldn't match.
+        // BUT: the idempotency key is built from sorted bookingIds, so
+        // [A, D] sorted produces a DIFFERENT key from [A]. So this
+        // doesn't actually trigger CONVERSION_INTEGRITY_ERROR.
+        // Instead we test that early lookup misses (different key) AND
+        // selectConfirmedBookings filters out A (already CONVERTED) and D
+        // (already CONVERTED in Test 5) → throws NO_BOOKINGS_TO_CONVERT.
+        bookingIds: [idBookingA, idBookingD],
+      });
+    } catch (err) {
+      threw = true;
+      if (err instanceof AppError) code = err.code;
+    }
+    assert(threw, 'expected throw');
+    assert(
+      code === 'NO_BOOKINGS_TO_CONVERT',
+      `expected NO_BOOKINGS_TO_CONVERT, got ${code}`
+    );
+
+    record('Test 8 — Explicit bookingIds new combination → no eligible bookings', 'PASS', `code=${code}`);
+  } catch (err) {
+    record('Test 8 — Explicit bookingIds new combination → no eligible bookings', 'FAIL', (err as Error).message);
+  }
+
   // ── Cleanup ──
   console.log('');
   console.log('=== Cleanup ===');

@@ -553,6 +553,61 @@ export const bookingRepository = Object.freeze({
         );
       }
 
+      // 2. Idempotency-first lookup when caller passed explicit `bookingIds`.
+      //    This lets a route handler retry-safe even after the original
+      //    bookings flipped to CONVERTED_TO_ORDER (caller's own Cancel / lost
+      //    response / double-click 5 min later). Without this, the second
+      //    call would hit `selectConfirmedBookings → []` and throw
+      //    NO_BOOKINGS_TO_CONVERT — leaving the caller unsure whether their
+      //    first request succeeded.
+      //
+      //    When `bookingIds` is omitted (legacy direct-from-repo callers),
+      //    we keep the old preflight-first ordering: filter CONFIRMED →
+      //    build key from confirmed set → check existing Order. This
+      //    preserves prior `verify-booking-flow.ts` Test 2 semantics.
+      if (bookingIds && bookingIds.length > 0) {
+        const idempotencyKeyEarly = buildConversionIdempotencyKey({
+          shopId,
+          liveSessionId,
+          customerId,
+          bookingIds,
+        });
+        const existingEarly = await tx.order.findUnique({
+          where: { idempotencyKey: idempotencyKeyEarly },
+          select: {
+            id: true,
+            orderNumber: true,
+            totalAmount: true,
+            convertedFromBookings: { select: { id: true } },
+          },
+        });
+        if (existingEarly) {
+          const existingIds = new Set(
+            existingEarly.convertedFromBookings.map((b) => b.id)
+          );
+          const requestedIds = new Set(bookingIds);
+          const sameSet =
+            existingIds.size === requestedIds.size &&
+            [...existingIds].every((id) => requestedIds.has(id));
+          if (!sameSet) {
+            throw new AppError(
+              'Idempotency key matches an existing Order with a different booking set',
+              BOOKING_ERROR_CODES.CONVERSION_INTEGRITY_ERROR,
+              500
+            );
+          }
+          return Object.freeze({
+            orderId: existingEarly.id,
+            orderNumber: existingEarly.orderNumber,
+            status: 'RESERVED' as const,
+            idempotent: true,
+            bookingCount: existingEarly.convertedFromBookings.length,
+            bookingIds: Object.freeze([...existingIds]),
+            totalAmount: existingEarly.totalAmount.toString(),
+          });
+        }
+      }
+
       const eligible = selectConfirmedBookings(snapshots, { bookingIds });
       const preflight = validateBookingsConvertible(eligible);
       if (!preflight.ok) {
@@ -569,7 +624,9 @@ export const bookingRepository = Object.freeze({
         );
       }
 
-      // 2. Build deterministic idempotency key.
+      // 3. Build deterministic idempotency key from the confirmed set
+      //    (used when no explicit bookingIds were provided OR the early
+      //    lookup above did not find an existing Order).
       const idempotencyKey = buildConversionIdempotencyKey({
         shopId,
         liveSessionId,
@@ -577,7 +634,7 @@ export const bookingRepository = Object.freeze({
         bookingIds: eligible.map((b) => b.id),
       });
 
-      // 3. Idempotency check: existing Order with same key?
+      // 4. Idempotency check (post-filter): existing Order with same key?
       const existing = await tx.order.findUnique({
         where: { idempotencyKey },
         select: {
