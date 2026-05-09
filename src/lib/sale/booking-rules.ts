@@ -48,6 +48,19 @@ export interface IdempotencyDecision {
   readonly integrityError: boolean;
 }
 
+/**
+ * Discriminated union returned by `resolveActiveReservation`.
+ *
+ * Repository code MUST switch on `kind`:
+ * - `none`     → caller decides if absence is integrity error (CONFIRMED) or normal (PENDING_REVIEW)
+ * - `one`      → caller validates quantity/variant match before proceeding
+ * - `multiple` → caller MUST throw RESERVATION_INTEGRITY_ERROR; never silently pick first
+ */
+export type ActiveReservationLookup =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'one'; readonly reservation: ActiveReservationSnapshot }
+  | { readonly kind: 'multiple'; readonly count: number };
+
 // ─── Constants ────────────────────────────────────────────────────────────
 
 /**
@@ -164,27 +177,24 @@ export function hasSufficientStock(
  * Pure decision for the confirm-booking flow when caller already sees
  * `status === 'CONFIRMED'`.
  *
- * - If an active reservation exists with matching quantity for this booking,
- *   the operation is idempotent (return success no-op).
- * - If no matching reservation exists, data is corrupt and caller MUST throw
- *   `RESERVATION_INTEGRITY_ERROR`.
+ * Consumes a discriminated `ActiveReservationLookup` so the caller cannot
+ * silent-pick on multiple actives. Multi-active is always an integrity error.
  *
- * For non-CONFIRMED status, returns `{ idempotent: false, integrityError: false }`
- * (caller proceeds with normal flow).
+ * - `kind: 'one'` with matching quantity → idempotent no-op success
+ * - `kind: 'one'` with mismatched quantity → integrity error
+ * - `kind: 'none'` while CONFIRMED → integrity error
+ * - `kind: 'multiple'` → integrity error
+ * - non-CONFIRMED status → `{ idempotent: false, integrityError: false }` (caller proceeds with normal flow)
  */
 export function isAlreadyConfirmedIdempotent(
   status: BookingStatus,
-  matchingActiveReservation: ActiveReservationSnapshot | null,
+  lookup: ActiveReservationLookup,
   expectedQuantity: number
 ): IdempotencyDecision {
   if (status !== 'CONFIRMED') {
     return Object.freeze({ idempotent: false, integrityError: false });
   }
-  if (
-    matchingActiveReservation !== null &&
-    matchingActiveReservation.releasedAt === null &&
-    matchingActiveReservation.quantity === expectedQuantity
-  ) {
+  if (lookup.kind === 'one' && lookup.reservation.quantity === expectedQuantity) {
     return Object.freeze({ idempotent: true, integrityError: false });
   }
   return Object.freeze({ idempotent: false, integrityError: true });
@@ -264,22 +274,36 @@ export function preflightCancel(
   return Object.freeze({ errorCode: null, noop: false, mustReleaseStock: true });
 }
 
-// ─── Active reservation picker ───────────────────────────────────────────
+// ─── Active reservation resolver ─────────────────────────────────────────
 
 /**
- * Pure helper: given a booking's reservations, pick the single active one
- * (releasedAt === null and bookingId matches).
+ * Pure helper: classify a booking's reservation set into a discriminated
+ * union so callers cannot accidentally silent-pick on multi-active.
  *
- * Returns `null` if none active. Returns first match if multiple (caller
- * should treat multiple-active as integrity error in CONFIRMED state, but
- * the picker itself stays pure and lenient).
+ * Boss audit rule (2026-05-09): never return first-match when more than
+ * one active reservation exists for the same booking. Caller MUST throw
+ * RESERVATION_INTEGRITY_ERROR on `kind: 'multiple'`.
+ *
+ * Filters: `bookingId` matches AND `releasedAt === null`.
+ *
+ * Returns:
+ * - `{ kind: 'none' }` — zero active reservations match
+ * - `{ kind: 'one', reservation }` — exactly one active match
+ * - `{ kind: 'multiple', count }` — two or more active matches (data corruption)
  */
-export function pickActiveReservation(
+export function resolveActiveReservation(
   reservations: readonly ActiveReservationSnapshot[],
   bookingId: string
-): ActiveReservationSnapshot | null {
+): ActiveReservationLookup {
+  const matches: ActiveReservationSnapshot[] = [];
   for (const r of reservations) {
-    if (r.bookingId === bookingId && r.releasedAt === null) return r;
+    if (r.bookingId === bookingId && r.releasedAt === null) {
+      matches.push(r);
+    }
   }
-  return null;
+  if (matches.length === 0) return Object.freeze({ kind: 'none' as const });
+  if (matches.length === 1) {
+    return Object.freeze({ kind: 'one' as const, reservation: matches[0] });
+  }
+  return Object.freeze({ kind: 'multiple' as const, count: matches.length });
 }

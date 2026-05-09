@@ -5,9 +5,9 @@ import {
   BOOKING_ERROR_CODES,
   NO_EXPIRY_SENTINEL,
   isAlreadyConfirmedIdempotent,
-  pickActiveReservation,
   preflightCancel,
   preflightConfirm,
+  resolveActiveReservation,
   type ActiveReservationSnapshot,
   type BookingStatus,
   type CancelTargetStatus,
@@ -107,11 +107,23 @@ export const bookingRepository = Object.freeze({
     const { bookingId, shopId, changedById } = input;
 
     return prisma.$transaction(async (tx) => {
-      // 1. Read booking + broadcast product + active reservations for this booking.
+      // 1. Read booking + broadcast product (with variant→product.shopId for
+      //    cross-shop defense) + active reservations for this booking.
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, shopId },
         include: {
-          broadcastProduct: { select: { id: true, variantId: true } },
+          broadcastProduct: {
+            select: {
+              id: true,
+              variantId: true,
+              variant: {
+                select: {
+                  id: true,
+                  product: { select: { shopId: true } },
+                },
+              },
+            },
+          },
           stockReservations: {
             where: { releasedAt: null },
             select: {
@@ -146,30 +158,51 @@ export const bookingRepository = Object.freeze({
         );
       }
 
-      const currentStatus = booking.status as BookingStatus;
-      const reservationSnapshots = booking.stockReservations.map(toReservationSnapshot);
-      const matching = pickActiveReservation(reservationSnapshots, booking.id);
-
-      // 2. Idempotency path — already CONFIRMED.
-      const idempotency = isAlreadyConfirmedIdempotent(
-        currentStatus,
-        matching,
-        booking.quantity
-      );
-      if (idempotency.integrityError) {
+      // Defense-in-depth: BroadcastProduct.variantId could in principle point
+      // to a Variant whose Product belongs to a different shop (no schema-level
+      // CHECK constraint). Reject to prevent cross-shop stock reservation.
+      const variantProductShopId =
+        booking.broadcastProduct.variant?.product.shopId;
+      if (!variantProductShopId || variantProductShopId !== shopId) {
         throw new AppError(
-          'CONFIRMED booking missing matching active StockReservation',
+          'BroadcastProduct variant belongs to a different shop',
           BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
           500
         );
       }
-      if (idempotency.idempotent && matching) {
+
+      const currentStatus = booking.status as BookingStatus;
+      const reservationSnapshots = booking.stockReservations.map(toReservationSnapshot);
+      const lookup = resolveActiveReservation(reservationSnapshots, booking.id);
+
+      // 2. Idempotency path — already CONFIRMED. Multi-active is always
+      //    integrity error (caught by isAlreadyConfirmedIdempotent on
+      //    `kind: 'multiple'`).
+      const idempotency = isAlreadyConfirmedIdempotent(
+        currentStatus,
+        lookup,
+        booking.quantity
+      );
+      if (idempotency.integrityError) {
+        const detail =
+          lookup.kind === 'multiple'
+            ? `multiple active reservations (count=${lookup.count})`
+            : lookup.kind === 'none'
+              ? 'no active reservation'
+              : 'reservation quantity mismatch';
+        throw new AppError(
+          `CONFIRMED booking integrity error: ${detail}`,
+          BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+          500
+        );
+      }
+      if (idempotency.idempotent && lookup.kind === 'one') {
         return Object.freeze({
           bookingId: booking.id,
           status: 'CONFIRMED' as const,
-          reservationId: matching.id,
-          variantId: matching.variantId,
-          quantity: matching.quantity,
+          reservationId: lookup.reservation.id,
+          variantId: lookup.reservation.variantId,
+          quantity: lookup.reservation.quantity,
           idempotent: true,
         });
       }
@@ -313,11 +346,32 @@ export const bookingRepository = Object.freeze({
 
       if (decision.mustReleaseStock) {
         const snapshots = booking.stockReservations.map(toReservationSnapshot);
-        const reservation = pickActiveReservation(snapshots, booking.id);
+        const lookup = resolveActiveReservation(snapshots, booking.id);
 
-        if (!reservation) {
+        if (lookup.kind !== 'one') {
+          const detail =
+            lookup.kind === 'none'
+              ? 'no active reservation to release'
+              : `multiple active reservations (count=${lookup.count})`;
           throw new AppError(
-            'CONFIRMED booking has no active StockReservation to release',
+            `CONFIRMED booking integrity error: ${detail}`,
+            BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+            500
+          );
+        }
+
+        const reservation = lookup.reservation;
+
+        // Defense-in-depth: confirm the reservation's variant belongs to
+        // this shop. Prevents releasing stock on a cross-shop variant if a
+        // bug somewhere created a malformed reservation row.
+        const variantShopId = await tx.productVariant.findUnique({
+          where: { id: reservation.variantId },
+          select: { product: { select: { shopId: true } } },
+        });
+        if (!variantShopId || variantShopId.product.shopId !== shopId) {
+          throw new AppError(
+            'Reservation variant belongs to a different shop',
             BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
             500
           );

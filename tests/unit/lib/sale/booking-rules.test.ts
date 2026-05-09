@@ -9,7 +9,8 @@ import {
   isAlreadyConfirmedIdempotent,
   preflightConfirm,
   preflightCancel,
-  pickActiveReservation,
+  resolveActiveReservation,
+  type ActiveReservationLookup,
   type ActiveReservationSnapshot,
   type BookingStatus,
 } from '@/lib/sale/booking-rules';
@@ -184,51 +185,58 @@ describe('isAlreadyConfirmedIdempotent', () => {
     bookingId: 'book_1',
     releasedAt: null,
   });
+  const oneLookup: ActiveReservationLookup = Object.freeze({
+    kind: 'one' as const,
+    reservation: matchingReservation,
+  });
+  const noneLookup: ActiveReservationLookup = Object.freeze({ kind: 'none' as const });
+  const multipleLookup: ActiveReservationLookup = Object.freeze({
+    kind: 'multiple' as const,
+    count: 2,
+  });
 
-  it('CONFIRMED + matching active reservation → idempotent success', () => {
-    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', matchingReservation, 5);
+  it('CONFIRMED + kind=one with matching quantity → idempotent success', () => {
+    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', oneLookup, 5);
     expect(decision.idempotent).toBe(true);
     expect(decision.integrityError).toBe(false);
   });
 
-  it('CONFIRMED + null reservation → integrity error', () => {
-    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', null, 5);
+  it('CONFIRMED + kind=none → integrity error', () => {
+    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', noneLookup, 5);
     expect(decision.idempotent).toBe(false);
     expect(decision.integrityError).toBe(true);
   });
 
-  it('CONFIRMED + reservation with mismatched quantity → integrity error', () => {
-    const mismatched: ActiveReservationSnapshot = {
-      ...matchingReservation,
-      quantity: 3,
+  it('CONFIRMED + kind=multiple → integrity error (never silent-pick first)', () => {
+    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', multipleLookup, 5);
+    expect(decision.idempotent).toBe(false);
+    expect(decision.integrityError).toBe(true);
+  });
+
+  it('CONFIRMED + kind=one with mismatched quantity → integrity error', () => {
+    const mismatched: ActiveReservationLookup = {
+      kind: 'one',
+      reservation: { ...matchingReservation, quantity: 3 },
     };
     const decision = isAlreadyConfirmedIdempotent('CONFIRMED', mismatched, 5);
     expect(decision.idempotent).toBe(false);
     expect(decision.integrityError).toBe(true);
   });
 
-  it('CONFIRMED + already-released reservation → integrity error', () => {
-    const released: ActiveReservationSnapshot = {
-      ...matchingReservation,
-      releasedAt: new Date('2026-01-01T00:00:00Z'),
-    };
-    const decision = isAlreadyConfirmedIdempotent('CONFIRMED', released, 5);
+  it('PENDING_REVIEW + kind=one → not idempotent (caller proceeds with normal confirm)', () => {
+    const decision = isAlreadyConfirmedIdempotent('PENDING_REVIEW', oneLookup, 5);
     expect(decision.idempotent).toBe(false);
-    expect(decision.integrityError).toBe(true);
+    expect(decision.integrityError).toBe(false);
   });
 
-  it('PENDING_REVIEW → not idempotent (caller proceeds with normal confirm)', () => {
-    const decision = isAlreadyConfirmedIdempotent(
-      'PENDING_REVIEW',
-      matchingReservation,
-      5
-    );
+  it('PENDING_REVIEW + kind=none → not idempotent, no integrity error', () => {
+    const decision = isAlreadyConfirmedIdempotent('PENDING_REVIEW', noneLookup, 5);
     expect(decision.idempotent).toBe(false);
     expect(decision.integrityError).toBe(false);
   });
 
   it('CANCELLED → not idempotent, not integrity error (caller decides)', () => {
-    const decision = isAlreadyConfirmedIdempotent('CANCELLED', null, 5);
+    const decision = isAlreadyConfirmedIdempotent('CANCELLED', noneLookup, 5);
     expect(decision.idempotent).toBe(false);
     expect(decision.integrityError).toBe(false);
   });
@@ -311,9 +319,16 @@ describe('preflightCancel', () => {
   });
 });
 
-describe('pickActiveReservation', () => {
+describe('resolveActiveReservation', () => {
   const r1: ActiveReservationSnapshot = Object.freeze({
     id: 'res_1',
+    variantId: 'var_1',
+    quantity: 5,
+    bookingId: 'book_a',
+    releasedAt: null,
+  });
+  const r1b: ActiveReservationSnapshot = Object.freeze({
+    id: 'res_1b',
     variantId: 'var_1',
     quantity: 5,
     bookingId: 'book_a',
@@ -333,36 +348,66 @@ describe('pickActiveReservation', () => {
     bookingId: 'book_b',
     releasedAt: null,
   });
-
-  it('returns the active reservation matching bookingId', () => {
-    const picked = pickActiveReservation([r1, r2Released, r3Other], 'book_a');
-    expect(picked).toEqual(r1);
+  const orderSide: ActiveReservationSnapshot = Object.freeze({
+    id: 'res_order',
+    variantId: 'var_1',
+    quantity: 4,
+    bookingId: null,
+    releasedAt: null,
   });
 
-  it('skips released reservations even with matching bookingId', () => {
-    const picked = pickActiveReservation([r2Released], 'book_a');
-    expect(picked).toBe(null);
+  it('returns kind=one when exactly one active matches bookingId', () => {
+    const lookup = resolveActiveReservation([r1, r2Released, r3Other], 'book_a');
+    expect(lookup.kind).toBe('one');
+    if (lookup.kind === 'one') {
+      expect(lookup.reservation).toEqual(r1);
+    }
+  });
+
+  it('returns kind=none when no active matches', () => {
+    const lookup = resolveActiveReservation([r2Released, r3Other], 'book_a');
+    expect(lookup).toEqual({ kind: 'none' });
+  });
+
+  it('returns kind=multiple when 2+ active match same bookingId', () => {
+    const lookup = resolveActiveReservation([r1, r1b], 'book_a');
+    expect(lookup.kind).toBe('multiple');
+    if (lookup.kind === 'multiple') {
+      expect(lookup.count).toBe(2);
+    }
+  });
+
+  it('returns kind=multiple with accurate count for 3 active matches', () => {
+    const r1c: ActiveReservationSnapshot = { ...r1, id: 'res_1c' };
+    const lookup = resolveActiveReservation([r1, r1b, r1c], 'book_a');
+    expect(lookup.kind).toBe('multiple');
+    if (lookup.kind === 'multiple') {
+      expect(lookup.count).toBe(3);
+    }
+  });
+
+  it('skips released reservations when counting', () => {
+    const lookup = resolveActiveReservation([r1, r2Released], 'book_a');
+    expect(lookup.kind).toBe('one');
   });
 
   it('skips reservations with different bookingId', () => {
-    const picked = pickActiveReservation([r3Other], 'book_a');
-    expect(picked).toBe(null);
-  });
-
-  it('returns null on empty list', () => {
-    const picked = pickActiveReservation([], 'book_a');
-    expect(picked).toBe(null);
+    const lookup = resolveActiveReservation([r3Other], 'book_a');
+    expect(lookup).toEqual({ kind: 'none' });
   });
 
   it('skips reservations with null bookingId (order-side reservations)', () => {
-    const orderSide: ActiveReservationSnapshot = {
-      id: 'res_order',
-      variantId: 'var_1',
-      quantity: 4,
-      bookingId: null,
-      releasedAt: null,
-    };
-    const picked = pickActiveReservation([orderSide], 'book_a');
-    expect(picked).toBe(null);
+    const lookup = resolveActiveReservation([orderSide], 'book_a');
+    expect(lookup).toEqual({ kind: 'none' });
+  });
+
+  it('returns kind=none on empty list', () => {
+    const lookup = resolveActiveReservation([], 'book_a');
+    expect(lookup).toEqual({ kind: 'none' });
+  });
+
+  it('treats order-side + booking-side mix as one when only one booking-side active', () => {
+    const lookup = resolveActiveReservation([orderSide, r1], 'book_a');
+    expect(lookup.kind).toBe('one');
   });
 });
