@@ -4,13 +4,19 @@ import { AppError, ConflictError, NotFoundError } from '@/lib/errors';
 import {
   BOOKING_ERROR_CODES,
   NO_EXPIRY_SENTINEL,
+  buildConversionIdempotencyKey,
+  computeOrderTotals,
+  groupBookingsForOrderItems,
   isAlreadyConfirmedIdempotent,
   preflightCancel,
   preflightConfirm,
   resolveActiveReservation,
+  selectConfirmedBookings,
+  validateBookingsConvertible,
   type ActiveReservationSnapshot,
   type BookingStatus,
   type CancelTargetStatus,
+  type ConfirmedBookingSnapshot,
 } from '@/lib/sale/booking-rules';
 
 /**
@@ -74,6 +80,32 @@ export interface CancelBookingResult {
   readonly releasedQuantity: number;
   /** True when the booking was already in the target terminal state. */
   readonly idempotent: boolean;
+}
+
+export interface ConvertBookingsToOrderInput {
+  readonly shopId: string;
+  readonly liveSessionId: string;
+  readonly customerId: string;
+  /** Admin User.id who triggered conversion. */
+  readonly changedById: string;
+  /**
+   * Optional whitelist for partial conversion (Phase 2 hook). Phase 1
+   * route layer omits this — conversion picks up all CONFIRMED bookings
+   * for the (shop, liveSession, customer) tuple.
+   */
+  readonly bookingIds?: readonly string[];
+}
+
+export interface ConvertBookingsToOrderResult {
+  readonly orderId: string;
+  readonly orderNumber: string;
+  readonly status: 'RESERVED';
+  /** True when the call was a no-op against an already-converted booking set. */
+  readonly idempotent: boolean;
+  readonly bookingCount: number;
+  readonly bookingIds: readonly string[];
+  /** Order total as decimal-string (e.g. "120.00"). */
+  readonly totalAmount: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -433,6 +465,282 @@ export const bookingRepository = Object.freeze({
         stockReleased,
         releasedQuantity,
         idempotent: false,
+      });
+    });
+  },
+
+  /**
+   * Convert all CONFIRMED bookings for one customer in one live session
+   * into a single Order with consolidated OrderItems.
+   *
+   * Stock invariant: bookings already incremented `ProductVariant.reservedQty`
+   * at confirm time. Conversion does NOT touch `reservedQty` — it transfers
+   * the existing StockReservation rows to also point at the new Order via
+   * `orderId`. The eventual `Order.RESERVED → CONFIRMED` transition then
+   * decrements both `quantity` and `reservedQty` exactly once via existing
+   * `orderRepository.transition()` logic.
+   *
+   * Idempotent: deterministic key
+   *   sale-conv:{shopId}:{liveSessionId}:{customerId}:{sortedBookingIdsHash16}
+   * If a previous conversion produced an Order with the same key, returns
+   * that Order instead of creating a duplicate.
+   *
+   * Phase 1 boundaries (per Boss + ChatGPT):
+   * - No customer-facing email / messenger / WhatsApp / Telegram send.
+   * - No checkout/order/payment behavior change.
+   * - No webhook fan-out (deferred per Boss Q8).
+   * - `Order.channel = 'MANUAL'` (no enum migration).
+   * - OrderAudit.action = 'CREATED_FROM_SALE_BOOKINGS' for traceability.
+   */
+  async convertToOrder(
+    input: ConvertBookingsToOrderInput
+  ): Promise<ConvertBookingsToOrderResult> {
+    const { shopId, liveSessionId, customerId, changedById, bookingIds } = input;
+
+    return prisma.$transaction(async (tx) => {
+      // 1. Fetch all bookings for (shop, session, customer). Filter to CONFIRMED
+      //    + optional bookingIds whitelist via pure helper.
+      const allBookings = await tx.booking.findMany({
+        where: { shopId, liveSessionId, customerId },
+        include: {
+          broadcastProduct: {
+            select: { id: true, productId: true, variantId: true },
+          },
+          stockReservations: {
+            where: { releasedAt: null },
+            select: {
+              id: true,
+              variantId: true,
+              quantity: true,
+              bookingId: true,
+              orderId: true,
+              releasedAt: true,
+            },
+          },
+        },
+      });
+
+      // Map Prisma rows → pure-helper snapshots.
+      // ASSUMPTION: BroadcastProduct.variantId is non-null at confirm-time,
+      // verified at booking confirm. If any booking row is missing variantId
+      // here, treat as integrity error.
+      const snapshots: ConfirmedBookingSnapshot[] = [];
+      for (const b of allBookings) {
+        if (!b.broadcastProduct) {
+          throw new AppError(
+            'BroadcastProduct missing for booking ' + b.id,
+            BOOKING_ERROR_CODES.BROADCAST_PRODUCT_NOT_FOUND,
+            500
+          );
+        }
+        const variantId = b.broadcastProduct.variantId;
+        if (!variantId) {
+          throw new AppError(
+            'BroadcastProduct.variantId missing for booking ' + b.id,
+            BOOKING_ERROR_CODES.VARIANT_REQUIRED,
+            500
+          );
+        }
+        snapshots.push(
+          Object.freeze({
+            id: b.id,
+            status: b.status as BookingStatus,
+            quantity: b.quantity,
+            unitPrice: b.unitPrice.toString(),
+            productId: b.broadcastProduct.productId,
+            variantId,
+          })
+        );
+      }
+
+      const eligible = selectConfirmedBookings(snapshots, { bookingIds });
+      const preflight = validateBookingsConvertible(eligible);
+      if (!preflight.ok) {
+        if (preflight.code === BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT) {
+          throw new AppError(
+            'No CONFIRMED bookings to convert for this customer × session',
+            BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT,
+            422
+          );
+        }
+        // Should not occur given selectConfirmedBookings filter, but defensive.
+        throw new ConflictError(
+          'Conversion preflight failed: ' + preflight.code
+        );
+      }
+
+      // 2. Build deterministic idempotency key.
+      const idempotencyKey = buildConversionIdempotencyKey({
+        shopId,
+        liveSessionId,
+        customerId,
+        bookingIds: eligible.map((b) => b.id),
+      });
+
+      // 3. Idempotency check: existing Order with same key?
+      const existing = await tx.order.findUnique({
+        where: { idempotencyKey },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          totalAmount: true,
+          convertedFromBookings: { select: { id: true } },
+        },
+      });
+      if (existing) {
+        // Verify the existing Order's converted bookings match exactly the
+        // current eligible set. If mismatch → integrity error.
+        const existingIds = new Set(existing.convertedFromBookings.map((b) => b.id));
+        const eligibleIds = new Set(eligible.map((b) => b.id));
+        const sameSet =
+          existingIds.size === eligibleIds.size &&
+          [...existingIds].every((id) => eligibleIds.has(id));
+        if (!sameSet) {
+          throw new AppError(
+            'Idempotency key matches an existing Order with a different booking set',
+            BOOKING_ERROR_CODES.CONVERSION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        return Object.freeze({
+          orderId: existing.id,
+          orderNumber: existing.orderNumber,
+          status: 'RESERVED' as const,
+          idempotent: true,
+          bookingCount: existing.convertedFromBookings.length,
+          bookingIds: Object.freeze([...existingIds]),
+          totalAmount: existing.totalAmount.toString(),
+        });
+      }
+
+      // 4. Compute order items + totals via pure helpers.
+      const groups = groupBookingsForOrderItems(eligible);
+      const totals = computeOrderTotals(groups);
+
+      // 5. Generate orderNumber. NOTE: ASSUMPTION same pattern as storefront
+      //    checkout (`ORD-NNNNNN`). Race-prone under concurrency but
+      //    matches existing behavior. Out of scope to fix.
+      const orderCount = await tx.order.count({ where: { shopId } });
+      const orderNumber = `ORD-${String(orderCount + 1).padStart(6, '0')}`;
+
+      // 6. Create Order + nested OrderItems.
+      const newOrder = await tx.order.create({
+        data: {
+          shopId,
+          customerId,
+          orderNumber,
+          status: 'RESERVED',
+          channel: 'MANUAL',
+          totalAmount: totals.total,
+          shippingFee: totals.shippingFee,
+          notes: null,
+          idempotencyKey,
+          items: {
+            create: groups.map((g) => ({
+              productId: g.productId,
+              variantId: g.variantId,
+              quantity: g.quantity,
+              unitPrice: g.unitPrice,
+              totalPrice: g.totalPrice,
+            })),
+          },
+        },
+        select: { id: true, orderNumber: true },
+      });
+
+      // 7. Transfer StockReservation rows: gain orderId, keep bookingId,
+      //    KEEP expiresAt sentinel (Boss decision Q1: admin already
+      //    committed; no auto-release).
+      //
+      //    Each booking should have exactly one active StockReservation
+      //    row (booking confirm guarantees this). Multi-active is
+      //    integrity error per Commit 2B-AUDIT-001.
+      for (const b of eligible) {
+        const bookingPrismaRow = allBookings.find((x) => x.id === b.id)!;
+        const activeReservations = bookingPrismaRow.stockReservations.filter(
+          (r) => r.bookingId === b.id && r.releasedAt === null
+        );
+        if (activeReservations.length === 0) {
+          throw new AppError(
+            'CONFIRMED booking has no active StockReservation: ' + b.id,
+            BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        if (activeReservations.length > 1) {
+          throw new AppError(
+            `CONFIRMED booking has ${activeReservations.length} active StockReservations: ` +
+              b.id,
+            BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        const reservation = activeReservations[0];
+        if (reservation.orderId !== null) {
+          throw new AppError(
+            'StockReservation already bound to an order: ' + reservation.id,
+            BOOKING_ERROR_CODES.CONVERSION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        await tx.stockReservation.update({
+          where: { id: reservation.id },
+          data: { orderId: newOrder.id },
+        });
+      }
+
+      // 8. Flip Booking status + set convertedOrderId.
+      const now = new Date();
+      const bookingIdList = eligible.map((b) => b.id);
+      await tx.booking.updateMany({
+        where: { id: { in: bookingIdList } },
+        data: {
+          status: 'CONVERTED_TO_ORDER',
+          convertedOrderId: newOrder.id,
+          updatedAt: now,
+        },
+      });
+
+      // 9. BookingHistory rows for each booking (one per booking; preserves
+      //    per-booking audit per Boss decision §16 in initial dissent).
+      await tx.bookingHistory.createMany({
+        data: eligible.map((b) => ({
+          bookingId: b.id,
+          fromStatus: 'CONFIRMED' as const,
+          toStatus: 'CONVERTED_TO_ORDER' as const,
+          changedById,
+          reason: null,
+          metadata: { orderId: newOrder.id, orderNumber: newOrder.orderNumber } as Prisma.InputJsonValue,
+        })),
+      });
+
+      // 10. OrderAudit row (matches storefront checkout pattern at line 140
+      //     of checkout.repository.ts).
+      await tx.orderAudit.create({
+        data: {
+          orderId: newOrder.id,
+          action: 'CREATED_FROM_SALE_BOOKINGS',
+          toStatus: 'RESERVED',
+          metadata: {
+            source: 'sale_booking_conversion',
+            bookingIds: bookingIdList,
+            bookingCount: bookingIdList.length,
+            liveSessionId,
+            changedById,
+          } as Prisma.InputJsonValue,
+          performedBy: changedById,
+        },
+      });
+
+      return Object.freeze({
+        orderId: newOrder.id,
+        orderNumber: newOrder.orderNumber,
+        status: 'RESERVED' as const,
+        idempotent: false,
+        bookingCount: bookingIdList.length,
+        bookingIds: Object.freeze([...bookingIdList]),
+        totalAmount: totals.total,
       });
     });
   },

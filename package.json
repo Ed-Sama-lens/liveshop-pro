@@ -18,7 +18,8 @@
     "db:generate": "prisma generate",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "verify:booking-flow": "tsx scripts/verify-booking-flow.ts"
+    "verify:booking-flow": "tsx scripts/verify-booking-flow.ts",
+    "verify:booking-conversion": "tsx scripts/verify-booking-conversion.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

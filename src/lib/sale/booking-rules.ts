@@ -3,12 +3,20 @@
  *
  * No Prisma. No DB. No I/O. Fully unit-testable.
  *
- * Used by `src/server/repositories/booking.repository.ts` for transaction-safe
- * booking confirm/cancel logic. Keep this module side-effect-free.
+ * The single non-DOM dependency is Node's `crypto.createHash` (used by
+ * `buildConversionIdempotencyKey`). Acceptable: SHA-256 is deterministic,
+ * pure, no I/O.
  *
- * Design ref: docs/superpowers/2026-05-09-sale-booking-runtime-design.md
+ * Used by `src/server/repositories/booking.repository.ts` for transaction-safe
+ * booking confirm/cancel/convert logic. Keep this module side-effect-free.
+ *
+ * Design refs:
+ * - docs/superpowers/2026-05-09-sale-booking-runtime-design.md (confirm/cancel)
+ * - docs/superpowers/2026-05-09-booking-to-order-conversion-dissent.md (convert)
  * Boss decisions ref: docs/superpowers/2026-04-06-sale-mvp-dissent.md
  */
+
+import { createHash } from 'crypto';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -88,6 +96,9 @@ export const BOOKING_ERROR_CODES = Object.freeze({
   INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
   RESERVATION_INTEGRITY_ERROR: 'RESERVATION_INTEGRITY_ERROR',
   RESERVATION_ALREADY_RELEASED: 'RESERVATION_ALREADY_RELEASED',
+  // Conversion (Commit 2H)
+  NO_BOOKINGS_TO_CONVERT: 'NO_BOOKINGS_TO_CONVERT',
+  CONVERSION_INTEGRITY_ERROR: 'CONVERSION_INTEGRITY_ERROR',
 } as const);
 
 export type BookingErrorCode =
@@ -306,4 +317,225 @@ export function resolveActiveReservation(
     return Object.freeze({ kind: 'one' as const, reservation: matches[0] });
   }
   return Object.freeze({ kind: 'multiple' as const, count: matches.length });
+}
+
+// ─── Booking → Order conversion (Commit 2H) ──────────────────────────────
+//
+// Pure helpers used by `bookingRepository.convertToOrder()`. Module stays
+// side-effect-free: zero Prisma, zero DB.
+//
+// Design ref: docs/superpowers/2026-05-09-booking-to-order-conversion-dissent.md
+
+/**
+ * Snapshot of a CONFIRMED booking eligible for conversion. Caller maps
+ * Prisma rows into this shape so this module never touches Prisma.
+ */
+export interface ConfirmedBookingSnapshot {
+  readonly id: string;
+  readonly status: BookingStatus;
+  readonly quantity: number;
+  /** Decimal as string (Prisma serialization). e.g. '12.34'. */
+  readonly unitPrice: string;
+  readonly productId: string;
+  readonly variantId: string;
+}
+
+/**
+ * One row that will become a single OrderItem.
+ *
+ * Boss decision (Q3 in dissent): consolidate by (productId, variantId, unitPrice).
+ * Same-key bookings → one OrderItem with summed quantity.
+ * Different unitPrice → separate OrderItems.
+ */
+export interface OrderItemGroup {
+  readonly productId: string;
+  readonly variantId: string;
+  readonly unitPrice: string;
+  readonly quantity: number;
+  readonly totalPrice: string;
+  readonly sourceBookingIds: readonly string[];
+}
+
+export interface OrderTotals {
+  readonly subtotal: string;
+  readonly shippingFee: string;
+  readonly total: string;
+}
+
+/**
+ * Pure decimal multiply preserving 2-place precision without floating-point
+ * drift. Inputs are decimal-as-string from Prisma.Decimal serialization.
+ *
+ * NOTE: Phase 1 prices are simple Decimal(12,2). Multiplying ints * cents
+ * stays safe within Number precision for any realistic order. Future
+ * hardening could swap to a decimal library (e.g. decimal.js) if order
+ * sizes grow. Out of Commit 2H scope.
+ */
+function multiplyDecimal2(unitPrice: string, quantity: number): string {
+  // Treat unitPrice as cents-int after parse to avoid float drift.
+  const parts = unitPrice.split('.');
+  const whole = parseInt(parts[0] ?? '0', 10);
+  const fracStr = (parts[1] ?? '').padEnd(2, '0').slice(0, 2);
+  const frac = parseInt(fracStr || '0', 10);
+  const cents = whole * 100 + (whole < 0 ? -frac : frac);
+  const totalCents = cents * quantity;
+  const sign = totalCents < 0 ? '-' : '';
+  const abs = Math.abs(totalCents);
+  const dollars = Math.floor(abs / 100);
+  const remainder = abs % 100;
+  return `${sign}${dollars}.${remainder.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Pure decimal sum preserving 2-place precision.
+ */
+function sumDecimal2(values: readonly string[]): string {
+  let totalCents = 0;
+  for (const v of values) {
+    const parts = v.split('.');
+    const whole = parseInt(parts[0] ?? '0', 10);
+    const fracStr = (parts[1] ?? '').padEnd(2, '0').slice(0, 2);
+    const frac = parseInt(fracStr || '0', 10);
+    const cents = whole * 100 + (whole < 0 ? -frac : frac);
+    totalCents += cents;
+  }
+  const sign = totalCents < 0 ? '-' : '';
+  const abs = Math.abs(totalCents);
+  const dollars = Math.floor(abs / 100);
+  const remainder = abs % 100;
+  return `${sign}${dollars}.${remainder.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Pure: filter input bookings to status === 'CONFIRMED' only. Phase 1
+ * skips CANCELLED / EXPIRED / PENDING_REVIEW / CONVERTED_TO_ORDER (per
+ * Boss decision Q10). If `bookingIds` whitelist is supplied, additionally
+ * filters to that set (Phase 2 hook; Phase 1 omits).
+ */
+export function selectConfirmedBookings(
+  allBookings: readonly ConfirmedBookingSnapshot[],
+  options: { readonly bookingIds?: readonly string[] }
+): readonly ConfirmedBookingSnapshot[] {
+  const allowed: Set<string> | null = options.bookingIds
+    ? new Set(options.bookingIds)
+    : null;
+  const result: ConfirmedBookingSnapshot[] = [];
+  for (const b of allBookings) {
+    if (b.status !== 'CONFIRMED') continue;
+    if (allowed && !allowed.has(b.id)) continue;
+    result.push(b);
+  }
+  return Object.freeze(result);
+}
+
+/**
+ * Pure preflight: confirms there is something to convert.
+ */
+export function validateBookingsConvertible(
+  bookings: readonly ConfirmedBookingSnapshot[]
+): { readonly ok: true } | { readonly ok: false; readonly code: BookingErrorCode } {
+  if (bookings.length === 0) {
+    return Object.freeze({ ok: false as const, code: BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT });
+  }
+  for (const b of bookings) {
+    if (b.status !== 'CONFIRMED') {
+      return Object.freeze({
+        ok: false as const,
+        code: BOOKING_ERROR_CODES.BOOKING_INVALID_STATUS,
+      });
+    }
+  }
+  return Object.freeze({ ok: true as const });
+}
+
+/**
+ * Pure: group bookings by (productId, variantId, unitPrice) and produce
+ * OrderItem-ready rows.
+ *
+ * Same key → ONE group with summed quantity and recomputed totalPrice.
+ * Different unitPrice → SEPARATE groups (e.g. priceOverride changed
+ * mid-broadcast).
+ *
+ * Output order is stable: groups appear in first-seen order from input.
+ */
+export function groupBookingsForOrderItems(
+  bookings: readonly ConfirmedBookingSnapshot[]
+): readonly OrderItemGroup[] {
+  const map = new Map<
+    string,
+    {
+      productId: string;
+      variantId: string;
+      unitPrice: string;
+      quantity: number;
+      sourceBookingIds: string[];
+    }
+  >();
+  for (const b of bookings) {
+    const key = `${b.productId}|${b.variantId}|${b.unitPrice}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.quantity += b.quantity;
+      existing.sourceBookingIds.push(b.id);
+    } else {
+      map.set(key, {
+        productId: b.productId,
+        variantId: b.variantId,
+        unitPrice: b.unitPrice,
+        quantity: b.quantity,
+        sourceBookingIds: [b.id],
+      });
+    }
+  }
+  const groups: OrderItemGroup[] = [];
+  for (const g of map.values()) {
+    groups.push(
+      Object.freeze({
+        productId: g.productId,
+        variantId: g.variantId,
+        unitPrice: g.unitPrice,
+        quantity: g.quantity,
+        totalPrice: multiplyDecimal2(g.unitPrice, g.quantity),
+        sourceBookingIds: Object.freeze([...g.sourceBookingIds]),
+      })
+    );
+  }
+  return Object.freeze(groups);
+}
+
+/**
+ * Pure: compute order totals from grouped items. Phase 1 has zero
+ * shipping fee (admin fills at SHIPPED transition per Boss decision C4).
+ */
+export function computeOrderTotals(
+  groups: readonly OrderItemGroup[]
+): OrderTotals {
+  const subtotal = sumDecimal2(groups.map((g) => g.totalPrice));
+  const shippingFee = '0.00';
+  const total = sumDecimal2([subtotal, shippingFee]);
+  return Object.freeze({ subtotal, shippingFee, total });
+}
+
+/**
+ * Pure: deterministic idempotency key for booking → order conversion.
+ *
+ * Format (Boss decision Q6 / dissent §10):
+ *   sale-conv:{shopId}:{liveSessionId}:{customerId}:{sortedBookingIdsHash16}
+ *
+ * sortedBookingIdsHash16 = first 16 hex chars of SHA-256 over
+ * sorted booking IDs joined by ','.
+ *
+ * Sorting normalizes input order so two clicks with the same booking set
+ * produce the same key (and thus collide on the unique constraint, which
+ * the repository catches and returns idempotently).
+ */
+export function buildConversionIdempotencyKey(input: {
+  readonly shopId: string;
+  readonly liveSessionId: string;
+  readonly customerId: string;
+  readonly bookingIds: readonly string[];
+}): string {
+  const sorted = [...input.bookingIds].sort();
+  const hash = createHash('sha256').update(sorted.join(',')).digest('hex').slice(0, 16);
+  return `sale-conv:${input.shopId}:${input.liveSessionId}:${input.customerId}:${hash}`;
 }

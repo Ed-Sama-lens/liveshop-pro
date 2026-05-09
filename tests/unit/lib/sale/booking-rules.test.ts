@@ -2,17 +2,23 @@ import { describe, it, expect } from 'vitest';
 import {
   NO_EXPIRY_SENTINEL,
   BOOKING_ERROR_CODES,
+  buildConversionIdempotencyKey,
   canTransitionBookingStatus,
-  isTerminalBookingStatus,
   computeAvailable,
+  computeOrderTotals,
+  groupBookingsForOrderItems,
   hasSufficientStock,
   isAlreadyConfirmedIdempotent,
-  preflightConfirm,
+  isTerminalBookingStatus,
   preflightCancel,
+  preflightConfirm,
   resolveActiveReservation,
+  selectConfirmedBookings,
+  validateBookingsConvertible,
   type ActiveReservationLookup,
   type ActiveReservationSnapshot,
   type BookingStatus,
+  type ConfirmedBookingSnapshot,
 } from '@/lib/sale/booking-rules';
 
 describe('NO_EXPIRY_SENTINEL', () => {
@@ -409,5 +415,236 @@ describe('resolveActiveReservation', () => {
   it('treats order-side + booking-side mix as one when only one booking-side active', () => {
     const lookup = resolveActiveReservation([orderSide, r1], 'book_a');
     expect(lookup.kind).toBe('one');
+  });
+});
+
+// ─── Booking → Order conversion (Commit 2H) ──────────────────────────────
+
+function snapshot(
+  partial: Partial<ConfirmedBookingSnapshot> & { id: string }
+): ConfirmedBookingSnapshot {
+  return Object.freeze({
+    id: partial.id,
+    status: partial.status ?? ('CONFIRMED' as BookingStatus),
+    quantity: partial.quantity ?? 1,
+    unitPrice: partial.unitPrice ?? '10.00',
+    productId: partial.productId ?? 'prod_a',
+    variantId: partial.variantId ?? 'var_a',
+  });
+}
+
+describe('selectConfirmedBookings', () => {
+  it('keeps only CONFIRMED status', () => {
+    const result = selectConfirmedBookings(
+      [
+        snapshot({ id: 'a', status: 'CONFIRMED' }),
+        snapshot({ id: 'b', status: 'PENDING_REVIEW' }),
+        snapshot({ id: 'c', status: 'CANCELLED' }),
+        snapshot({ id: 'd', status: 'EXPIRED' }),
+        snapshot({ id: 'e', status: 'CONVERTED_TO_ORDER' }),
+      ],
+      {}
+    );
+    expect(result.map((b) => b.id)).toEqual(['a']);
+  });
+
+  it('respects optional bookingIds whitelist', () => {
+    const result = selectConfirmedBookings(
+      [
+        snapshot({ id: 'a' }),
+        snapshot({ id: 'b' }),
+        snapshot({ id: 'c' }),
+      ],
+      { bookingIds: ['a', 'c'] }
+    );
+    expect(result.map((b) => b.id)).toEqual(['a', 'c']);
+  });
+
+  it('returns empty when whitelist excludes all', () => {
+    const result = selectConfirmedBookings(
+      [snapshot({ id: 'a' })],
+      { bookingIds: ['z'] }
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty for empty input', () => {
+    expect(selectConfirmedBookings([], {})).toEqual([]);
+  });
+});
+
+describe('validateBookingsConvertible', () => {
+  it('rejects empty input with NO_BOOKINGS_TO_CONVERT', () => {
+    const r = validateBookingsConvertible([]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe(BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT);
+  });
+
+  it('accepts all-CONFIRMED input', () => {
+    const r = validateBookingsConvertible([
+      snapshot({ id: 'a', status: 'CONFIRMED' }),
+      snapshot({ id: 'b', status: 'CONFIRMED' }),
+    ]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects mixed input with BOOKING_INVALID_STATUS', () => {
+    const r = validateBookingsConvertible([
+      snapshot({ id: 'a', status: 'CONFIRMED' }),
+      snapshot({ id: 'b', status: 'CANCELLED' }),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe(BOOKING_ERROR_CODES.BOOKING_INVALID_STATUS);
+  });
+});
+
+describe('groupBookingsForOrderItems', () => {
+  it('consolidates same productId + variantId + unitPrice into one group', () => {
+    const groups = groupBookingsForOrderItems([
+      snapshot({ id: 'a', quantity: 2, unitPrice: '10.00' }),
+      snapshot({ id: 'b', quantity: 3, unitPrice: '10.00' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].quantity).toBe(5);
+    expect(groups[0].totalPrice).toBe('50.00');
+    expect(groups[0].sourceBookingIds).toEqual(['a', 'b']);
+  });
+
+  it('separates groups when unitPrice differs', () => {
+    const groups = groupBookingsForOrderItems([
+      snapshot({ id: 'a', quantity: 1, unitPrice: '10.00' }),
+      snapshot({ id: 'b', quantity: 1, unitPrice: '12.50' }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].totalPrice).toBe('10.00');
+    expect(groups[1].totalPrice).toBe('12.50');
+  });
+
+  it('separates groups when variantId differs', () => {
+    const groups = groupBookingsForOrderItems([
+      snapshot({ id: 'a', variantId: 'v1' }),
+      snapshot({ id: 'b', variantId: 'v2' }),
+    ]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(groupBookingsForOrderItems([])).toEqual([]);
+  });
+
+  it('preserves first-seen order across groups', () => {
+    const groups = groupBookingsForOrderItems([
+      snapshot({ id: 'a', variantId: 'v2' }),
+      snapshot({ id: 'b', variantId: 'v1' }),
+    ]);
+    expect(groups[0].variantId).toBe('v2');
+    expect(groups[1].variantId).toBe('v1');
+  });
+
+  it('handles three-way consolidation (sum across many bookings)', () => {
+    const groups = groupBookingsForOrderItems([
+      snapshot({ id: 'a', quantity: 1, unitPrice: '5.50' }),
+      snapshot({ id: 'b', quantity: 2, unitPrice: '5.50' }),
+      snapshot({ id: 'c', quantity: 4, unitPrice: '5.50' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].quantity).toBe(7);
+    expect(groups[0].totalPrice).toBe('38.50');
+    expect(groups[0].sourceBookingIds).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('computeOrderTotals', () => {
+  it('returns zero shipping in Phase 1', () => {
+    const totals = computeOrderTotals([
+      {
+        productId: 'p1',
+        variantId: 'v1',
+        unitPrice: '10.00',
+        quantity: 2,
+        totalPrice: '20.00',
+        sourceBookingIds: ['a'],
+      },
+    ]);
+    expect(totals.shippingFee).toBe('0.00');
+  });
+
+  it('sums multi-group subtotal correctly', () => {
+    const totals = computeOrderTotals([
+      {
+        productId: 'p1',
+        variantId: 'v1',
+        unitPrice: '10.00',
+        quantity: 2,
+        totalPrice: '20.00',
+        sourceBookingIds: ['a'],
+      },
+      {
+        productId: 'p2',
+        variantId: 'v2',
+        unitPrice: '12.50',
+        quantity: 1,
+        totalPrice: '12.50',
+        sourceBookingIds: ['b'],
+      },
+    ]);
+    expect(totals.subtotal).toBe('32.50');
+    expect(totals.total).toBe('32.50');
+  });
+
+  it('returns 0.00 totals for empty groups', () => {
+    const totals = computeOrderTotals([]);
+    expect(totals.subtotal).toBe('0.00');
+    expect(totals.total).toBe('0.00');
+  });
+});
+
+describe('buildConversionIdempotencyKey', () => {
+  const baseInput = Object.freeze({
+    shopId: 'shop_a',
+    liveSessionId: 'live_b',
+    customerId: 'cust_c',
+  });
+
+  it('produces deterministic key for same inputs', () => {
+    const k1 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x', 'y'] });
+    expect(k1).toBe(k2);
+  });
+
+  it('booking ID order does not affect key (sorted internally)', () => {
+    const k1 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['y', 'x'] });
+    expect(k1).toBe(k2);
+  });
+
+  it('different booking sets produce different keys', () => {
+    const k1 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x', 'z'] });
+    expect(k1).not.toBe(k2);
+  });
+
+  it('different shop produces different key', () => {
+    const k1 = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x'] });
+    const k2 = buildConversionIdempotencyKey({
+      ...baseInput,
+      shopId: 'shop_other',
+      bookingIds: ['x'],
+    });
+    expect(k1).not.toBe(k2);
+  });
+
+  it('uses sale-conv: prefix and contains shop/session/customer', () => {
+    const k = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x'] });
+    expect(k.startsWith('sale-conv:')).toBe(true);
+    expect(k).toContain('shop_a');
+    expect(k).toContain('live_b');
+    expect(k).toContain('cust_c');
+  });
+
+  it('hash suffix is 16 hex chars', () => {
+    const k = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x'] });
+    const hash = k.split(':').pop()!;
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
   });
 });
