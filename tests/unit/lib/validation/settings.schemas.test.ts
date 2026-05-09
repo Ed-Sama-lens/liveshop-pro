@@ -34,34 +34,93 @@ describe('updateShopSchema', () => {
 });
 
 describe('inviteMemberSchema', () => {
+  // Schema requires { name, username, password, role, email? }.
+  // Tests pre-2026-05-09 only passed { email, role } and were stale.
+  const validBase = {
+    name: 'Jane Doe',
+    username: 'janedoe',
+    password: 'secretsecret',
+  };
+
   it('accepts valid invite', () => {
     const result = inviteMemberSchema.parse({
+      ...validBase,
       email: 'user@example.com',
       role: 'MANAGER',
     });
     expect(result.email).toBe('user@example.com');
     expect(result.role).toBe('MANAGER');
+    expect(result.name).toBe('Jane Doe');
+    expect(result.username).toBe('janedoe');
   });
 
   it('accepts all valid roles', () => {
     for (const role of ['MANAGER', 'CHAT_SUPPORT', 'WAREHOUSE']) {
-      const result = inviteMemberSchema.parse({ email: 'a@b.com', role });
+      const result = inviteMemberSchema.parse({
+        ...validBase,
+        email: 'a@b.com',
+        role,
+      });
       expect(result.role).toBe(role);
     }
   });
 
+  it('accepts invite without email (email is optional)', () => {
+    const result = inviteMemberSchema.parse({
+      ...validBase,
+      role: 'WAREHOUSE',
+    });
+    expect(result.email).toBeUndefined();
+    expect(result.role).toBe('WAREHOUSE');
+  });
+
   it('rejects OWNER role', () => {
-    const result = inviteMemberSchema.safeParse({ email: 'a@b.com', role: 'OWNER' });
+    const result = inviteMemberSchema.safeParse({
+      ...validBase,
+      email: 'a@b.com',
+      role: 'OWNER',
+    });
     expect(result.success).toBe(false);
   });
 
   it('rejects CUSTOMER role', () => {
-    const result = inviteMemberSchema.safeParse({ email: 'a@b.com', role: 'CUSTOMER' });
+    const result = inviteMemberSchema.safeParse({
+      ...validBase,
+      email: 'a@b.com',
+      role: 'CUSTOMER',
+    });
     expect(result.success).toBe(false);
   });
 
   it('rejects invalid email', () => {
-    const result = inviteMemberSchema.safeParse({ email: 'not-email', role: 'MANAGER' });
+    const result = inviteMemberSchema.safeParse({
+      ...validBase,
+      email: 'not-email',
+      role: 'MANAGER',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing required fields (name, username, password)', () => {
+    const result = inviteMemberSchema.safeParse({ email: 'a@b.com', role: 'MANAGER' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects username shorter than 3 chars', () => {
+    const result = inviteMemberSchema.safeParse({
+      ...validBase,
+      username: 'ab',
+      role: 'MANAGER',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects password shorter than 8 chars', () => {
+    const result = inviteMemberSchema.safeParse({
+      ...validBase,
+      password: 'short',
+      role: 'MANAGER',
+    });
     expect(result.success).toBe(false);
   });
 });

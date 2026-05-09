@@ -14,6 +14,13 @@ export const ROUTE_PERMISSIONS = [
   { prefix: '/customers', roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/chat', roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/live-selling', roles: ['OWNER', 'MANAGER'] as UserRole[] },
+  // /sale — V Rich-style live-selling admin (Phase 1 manual MVP).
+  // OWNER + MANAGER can perform all booking/order ops.
+  // CHAT_SUPPORT has page-level read access to assist customers from the
+  // booking list / reply panel; mutating actions (confirm/cancel/convert)
+  // are blocked at the API route layer per dissent §9.
+  // WAREHOUSE excluded from /sale in Phase 1.
+  { prefix: '/sale', roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/analytics', roles: ['OWNER', 'MANAGER'] as UserRole[] },
   { prefix: '/dashboard', roles: ['OWNER', 'MANAGER', 'WAREHOUSE', 'CHAT_SUPPORT'] as UserRole[] },
   { prefix: '/reports', roles: ['OWNER', 'MANAGER'] as UserRole[] },

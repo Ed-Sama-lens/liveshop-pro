@@ -61,7 +61,9 @@ describe('canAccess() — all role x route combinations', () => {
   it('OWNER can access /settings/shop', () => expect(canAccess('/settings/shop', 'OWNER').allowed).toBe(true));
   it('OWNER can access /settings/team', () => expect(canAccess('/settings/team', 'OWNER').allowed).toBe(true));
   it('OWNER can access /analytics', () => expect(canAccess('/analytics', 'OWNER').allowed).toBe(true));
-  it('OWNER can access /live', () => expect(canAccess('/live', 'OWNER').allowed).toBe(true));
+  it('OWNER can access /live-selling', () => expect(canAccess('/live-selling', 'OWNER').allowed).toBe(true));
+  it('OWNER can access /sale', () => expect(canAccess('/sale', 'OWNER').allowed).toBe(true));
+  it('OWNER can access /sale/[sessionId]', () => expect(canAccess('/sale/abc123', 'OWNER').allowed).toBe(true));
   it('OWNER can access /inventory', () => expect(canAccess('/inventory', 'OWNER').allowed).toBe(true));
   it('OWNER can access /chat', () => expect(canAccess('/chat', 'OWNER').allowed).toBe(true));
   it('OWNER can access /orders', () => expect(canAccess('/orders', 'OWNER').allowed).toBe(true));
@@ -72,7 +74,8 @@ describe('canAccess() — all role x route combinations', () => {
   it('MANAGER cannot access /settings/shop', () => expect(canAccess('/settings/shop', 'MANAGER').allowed).toBe(false));
   it('MANAGER can access /settings/team', () => expect(canAccess('/settings/team', 'MANAGER').allowed).toBe(true));
   it('MANAGER can access /analytics', () => expect(canAccess('/analytics', 'MANAGER').allowed).toBe(true));
-  it('MANAGER can access /live', () => expect(canAccess('/live', 'MANAGER').allowed).toBe(true));
+  it('MANAGER can access /live-selling', () => expect(canAccess('/live-selling', 'MANAGER').allowed).toBe(true));
+  it('MANAGER can access /sale', () => expect(canAccess('/sale', 'MANAGER').allowed).toBe(true));
   it('MANAGER can access /inventory', () => expect(canAccess('/inventory', 'MANAGER').allowed).toBe(true));
   it('MANAGER can access /chat', () => expect(canAccess('/chat', 'MANAGER').allowed).toBe(true));
   it('MANAGER can access /orders', () => expect(canAccess('/orders', 'MANAGER').allowed).toBe(true));
@@ -81,7 +84,8 @@ describe('canAccess() — all role x route combinations', () => {
 
   // WAREHOUSE — inventory and shipping only
   it('WAREHOUSE cannot access /analytics', () => expect(canAccess('/analytics', 'WAREHOUSE').allowed).toBe(false));
-  it('WAREHOUSE cannot access /live', () => expect(canAccess('/live', 'WAREHOUSE').allowed).toBe(false));
+  it('WAREHOUSE cannot access /live-selling', () => expect(canAccess('/live-selling', 'WAREHOUSE').allowed).toBe(false));
+  it('WAREHOUSE cannot access /sale', () => expect(canAccess('/sale', 'WAREHOUSE').allowed).toBe(false));
   it('WAREHOUSE cannot access /chat', () => expect(canAccess('/chat', 'WAREHOUSE').allowed).toBe(false));
   it('WAREHOUSE cannot access /customers', () => expect(canAccess('/customers', 'WAREHOUSE').allowed).toBe(false));
   it('WAREHOUSE cannot access /settings', () => expect(canAccess('/settings', 'WAREHOUSE').allowed).toBe(false));
@@ -92,7 +96,9 @@ describe('canAccess() — all role x route combinations', () => {
 
   // CHAT_SUPPORT — chat, orders, and customers only
   it('CHAT_SUPPORT cannot access /analytics', () => expect(canAccess('/analytics', 'CHAT_SUPPORT').allowed).toBe(false));
-  it('CHAT_SUPPORT cannot access /live', () => expect(canAccess('/live', 'CHAT_SUPPORT').allowed).toBe(false));
+  it('CHAT_SUPPORT cannot access /live-selling', () => expect(canAccess('/live-selling', 'CHAT_SUPPORT').allowed).toBe(false));
+  it('CHAT_SUPPORT can access /sale (read-level; mutations blocked at API layer)', () =>
+    expect(canAccess('/sale', 'CHAT_SUPPORT').allowed).toBe(true));
   it('CHAT_SUPPORT cannot access /inventory', () => expect(canAccess('/inventory', 'CHAT_SUPPORT').allowed).toBe(false));
   it('CHAT_SUPPORT cannot access /shipping', () => expect(canAccess('/shipping', 'CHAT_SUPPORT').allowed).toBe(false));
   it('CHAT_SUPPORT cannot access /settings', () => expect(canAccess('/settings', 'CHAT_SUPPORT').allowed).toBe(false));

@@ -27,7 +27,8 @@ describe('Middleware permission logic — integration', () => {
       '/settings',
       '/settings/team',
       '/settings/shop',
-      '/live',
+      '/live-selling',
+      '/sale',
       '/shipping',
     ];
     for (const path of paths) {
@@ -36,14 +37,14 @@ describe('Middleware permission logic — integration', () => {
   });
 
   it('CHAT_SUPPORT is blocked from warehouse and owner routes', () => {
-    const blockedPaths = ['/inventory', '/analytics', '/live', '/shipping', '/settings'];
+    const blockedPaths = ['/inventory', '/analytics', '/live-selling', '/shipping', '/settings'];
     for (const path of blockedPaths) {
       expect(canAccess(path, 'CHAT_SUPPORT').allowed).toBe(false);
     }
   });
 
   it('WAREHOUSE is blocked from customer-facing and admin routes', () => {
-    const blockedPaths = ['/chat', '/customers', '/analytics', '/live', '/settings'];
+    const blockedPaths = ['/chat', '/customers', '/analytics', '/live-selling', '/sale', '/settings'];
     for (const path of blockedPaths) {
       expect(canAccess(path, 'WAREHOUSE').allowed).toBe(false);
     }
