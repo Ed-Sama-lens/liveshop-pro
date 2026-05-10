@@ -17,15 +17,17 @@ export interface SalePanelCardProps {
   readonly icon: LucideIcon;
   /**
    * Top-right corner pill. Use to mark each panel's wiring state:
+   * - 'live'        — wired to real read-only API; data is current
    * - 'demo'        — shows static sample UI only
    * - 'placeholder' — empty shell with disabled controls
    * - 'coming-soon' — future feature not in this milestone
    */
-  readonly variant?: 'demo' | 'placeholder' | 'coming-soon';
+  readonly variant?: 'live' | 'demo' | 'placeholder' | 'coming-soon';
   readonly children: ReactNode;
 }
 
 const VARIANT_LABEL: Record<NonNullable<SalePanelCardProps['variant']>, string> = {
+  live: 'live',
   demo: 'demo only',
   placeholder: 'placeholder',
   'coming-soon': 'coming soon',

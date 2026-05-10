@@ -1,43 +1,117 @@
+'use client';
+
 import { Grid3x3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 
 /**
- * Product code grid placeholder — sample of admin-friendly broadcast
- * code cards (A001/B002/etc) that future 2O will wire to
- * BroadcastProduct rows for the selected live session.
- *
- * Static demo only. Cards are not clickable.
+ * Product code grid — wired to
+ * GET /api/sale/live-sessions/[liveSessionId]/broadcast-products
+ * (Commit 2S). Read-only. No action wired.
  */
-const DEMO_CODES: ReadonlyArray<{
-  readonly code: string;
-  readonly name: string;
-  readonly price: string;
-  readonly stock: number;
-}> = [
-  { code: 'A001', name: 'Steamed Bun Set / ขนมจีบ', price: '12.00', stock: 24 },
-  { code: 'A002', name: 'Chili Crab Sauce / น้ำพริก', price: '18.50', stock: 9 },
-  { code: 'B001', name: 'Pandan Cake / เค้กใบเตย', price: '25.00', stock: 0 },
-  { code: 'B002', name: 'Coconut Jelly / วุ้นมะพร้าว', price: '8.00', stock: 41 },
-  { code: 'C001', name: 'Curry Puff / กะหรี่ปั๊บ', price: '6.00', stock: 16 },
-  { code: 'C002', name: 'Herbal Tea / ชาสมุนไพร', price: '9.50', stock: 5 },
-];
+export interface SaleBroadcastProductRow {
+  readonly broadcastProductId: string;
+  readonly displayCode: string;
+  readonly displayOrder: number;
+  readonly productId: string;
+  readonly productName: string;
+  readonly variantId: string;
+  readonly variantName: string;
+  readonly sku: string;
+  readonly unitPrice: string;
+  readonly priceOverride: string | null;
+  readonly stockQuantity: number;
+  readonly reservedQty: number;
+  readonly availableQty: number;
+  readonly imageUrl: string | null;
+}
 
-export function SaleProductGridPlaceholder() {
+export interface SaleProductGridProps {
+  readonly state:
+    | { readonly kind: 'no-session' }
+    | { readonly kind: 'loading' }
+    | { readonly kind: 'error'; readonly message: string }
+    | {
+        readonly kind: 'ready';
+        readonly liveSessionId: string;
+        readonly products: readonly SaleBroadcastProductRow[];
+      };
+}
+
+export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
+  if (state.kind === 'no-session') {
+    return (
+      <SalePanelCard
+        title="Product Codes / รหัสสินค้า"
+        subtitle="เลือกรอบไลฟ์ก่อนเพื่อดูสินค้า"
+        icon={Grid3x3}
+        variant="placeholder"
+      >
+        <p className="text-sm text-muted-foreground">รอเลือกรอบไลฟ์</p>
+      </SalePanelCard>
+    );
+  }
+
+  if (state.kind === 'loading') {
+    return (
+      <SalePanelCard
+        title="Product Codes / รหัสสินค้า"
+        subtitle="กำลังโหลดสินค้าของรอบไลฟ์"
+        icon={Grid3x3}
+        variant="live"
+      >
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      </SalePanelCard>
+    );
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <SalePanelCard
+        title="Product Codes / รหัสสินค้า"
+        subtitle="โหลดข้อมูลไม่สำเร็จ"
+        icon={Grid3x3}
+        variant="live"
+      >
+        <p className="text-sm text-destructive">{state.message}</p>
+      </SalePanelCard>
+    );
+  }
+
+  if (state.products.length === 0) {
+    return (
+      <SalePanelCard
+        title="Product Codes / รหัสสินค้า"
+        subtitle="ยังไม่มีสินค้าในรอบไลฟ์นี้"
+        icon={Grid3x3}
+        variant="live"
+      >
+        <p className="text-sm text-muted-foreground">
+          ยังไม่มี BroadcastProduct ในรอบไลฟ์นี้ — กลับไปตั้งค่าใน Live Selling
+        </p>
+      </SalePanelCard>
+    );
+  }
+
   return (
     <SalePanelCard
       title="Product Codes / รหัสสินค้า"
-      subtitle="ตารางรหัสสินค้าสำหรับการจองและสร้างออเดอร์เร็ว"
+      subtitle={`${state.products.length} ชิ้น ในรอบนี้`}
       icon={Grid3x3}
-      variant="demo"
+      variant="live"
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {DEMO_CODES.map((p) => {
-          const outOfStock = p.stock === 0;
-          const lowStock = !outOfStock && p.stock <= 5;
+        {state.products.slice(0, 12).map((p) => {
+          const outOfStock = p.availableQty === 0;
+          const lowStock = !outOfStock && p.availableQty <= 5;
           return (
             <div
-              key={p.code}
+              key={p.broadcastProductId}
               className={`rounded-md border px-2 py-2 text-xs ${
                 outOfStock
                   ? 'border-red-300 bg-red-50 opacity-70 dark:border-red-800 dark:bg-red-950/30'
@@ -46,10 +120,13 @@ export function SaleProductGridPlaceholder() {
                     : 'border-border'
               }`}
             >
-              <p className="font-mono text-sm font-semibold">{p.code}</p>
-              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{p.name}</p>
+              <p className="font-mono text-sm font-semibold">{p.displayCode}</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {p.productName}
+              </p>
+              <p className="truncate text-[10px] text-muted-foreground">{p.sku}</p>
               <div className="mt-1 flex items-center justify-between">
-                <span className="font-mono text-[11px]">RM{p.price}</span>
+                <span className="font-mono text-[11px]">RM{p.unitPrice}</span>
                 <span
                   className={`text-[10px] ${
                     outOfStock
@@ -59,15 +136,20 @@ export function SaleProductGridPlaceholder() {
                         : 'text-muted-foreground'
                   }`}
                 >
-                  {outOfStock ? 'หมด' : `${p.stock} ชิ้น`}
+                  {outOfStock ? 'หมด' : `${p.availableQty} ชิ้น`}
                 </span>
               </div>
             </div>
           );
         })}
       </div>
+      {state.products.length > 12 ? (
+        <p className="text-[11px] text-muted-foreground">
+          แสดง 12 จาก {state.products.length} ชิ้น — ดูทั้งหมดในเฟสถัดไป
+        </p>
+      ) : null}
       <Button variant="outline" size="sm" disabled className="w-full">
-        ยังไม่เปิดใช้งาน
+        จองสินค้า — ยังไม่เปิดใช้งาน
       </Button>
     </SalePanelCard>
   );
