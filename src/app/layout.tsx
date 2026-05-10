@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
 import { Toaster } from '@/components/ui/sonner';
+import GlobalErrorCapture from '@/components/providers/GlobalErrorCapture';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin', 'latin-ext'] });
@@ -31,6 +32,7 @@ export default async function RootLayout({
       <body className={`${inter.className} ${notoSansSC.variable} min-h-screen antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NextIntlClientProvider messages={messages}>
+            <GlobalErrorCapture />
             {children}
             <Toaster richColors position="top-right" />
           </NextIntlClientProvider>
