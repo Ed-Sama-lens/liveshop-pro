@@ -126,6 +126,209 @@ function toReservationSnapshot(r: {
   });
 }
 
+/**
+ * Confirm-booking transaction body — runs inside an existing Prisma
+ * transaction client `tx`. MUST NOT call `prisma.$transaction()` itself.
+ *
+ * Used by:
+ * - `bookingRepository.confirm()` — opens its own `prisma.$transaction(tx => ...)` and delegates here
+ * - `bookingRepository.createManual()` (Commit 2M-b) — when admin requests
+ *   `status: 'CONFIRMED'` on create, opens a single transaction that first
+ *   inserts the Booking row at PENDING_REVIEW and then calls this helper
+ *   inside the same `tx`. If reservation fails, the entire transaction
+ *   (including the Booking insert) rolls back — no orphan PENDING booking.
+ *
+ * Behavior is identical to the previous inline body of `confirm()`. Extract
+ * is mechanical refactor only — no logic change. All 17 existing E2E tests
+ * (verify-booking-flow.ts 9/9 + verify-booking-conversion.ts 8/8) must
+ * continue passing identically.
+ */
+async function _runConfirmInTx(
+  tx: Prisma.TransactionClient,
+  input: ConfirmBookingInput
+): Promise<ConfirmBookingResult> {
+  const { bookingId, shopId, changedById } = input;
+
+  // 1. Read booking + broadcast product (with variant→product.shopId for
+  //    cross-shop defense) + active reservations for this booking.
+  const booking = await tx.booking.findFirst({
+    where: { id: bookingId, shopId },
+    include: {
+      broadcastProduct: {
+        select: {
+          id: true,
+          variantId: true,
+          variant: {
+            select: {
+              id: true,
+              product: { select: { shopId: true } },
+            },
+          },
+        },
+      },
+      stockReservations: {
+        where: { releasedAt: null },
+        select: {
+          id: true,
+          variantId: true,
+          quantity: true,
+          bookingId: true,
+          releasedAt: true,
+        },
+      },
+    },
+  });
+
+  if (!booking) {
+    throw new NotFoundError('Booking not found');
+  }
+  if (!booking.broadcastProduct) {
+    // Should be impossible given FK, but defensive.
+    throw new AppError(
+      'BroadcastProduct not found for booking',
+      BOOKING_ERROR_CODES.BROADCAST_PRODUCT_NOT_FOUND,
+      404
+    );
+  }
+
+  const variantId = booking.broadcastProduct.variantId;
+  if (!variantId) {
+    throw new AppError(
+      'BroadcastProduct has no variantId; whole-product bookings not supported in Phase 1',
+      BOOKING_ERROR_CODES.VARIANT_REQUIRED,
+      422
+    );
+  }
+
+  // Defense-in-depth: BroadcastProduct.variantId could in principle point
+  // to a Variant whose Product belongs to a different shop (no schema-level
+  // CHECK constraint). Reject to prevent cross-shop stock reservation.
+  const variantProductShopId =
+    booking.broadcastProduct.variant?.product.shopId;
+  if (!variantProductShopId || variantProductShopId !== shopId) {
+    throw new AppError(
+      'BroadcastProduct variant belongs to a different shop',
+      BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+      500
+    );
+  }
+
+  const currentStatus = booking.status as BookingStatus;
+  const reservationSnapshots = booking.stockReservations.map(toReservationSnapshot);
+  const lookup = resolveActiveReservation(reservationSnapshots, booking.id);
+
+  // 2. Idempotency path — already CONFIRMED. Multi-active is always
+  //    integrity error (caught by isAlreadyConfirmedIdempotent on
+  //    `kind: 'multiple'`).
+  const idempotency = isAlreadyConfirmedIdempotent(
+    currentStatus,
+    lookup,
+    booking.quantity
+  );
+  if (idempotency.integrityError) {
+    const detail =
+      lookup.kind === 'multiple'
+        ? `multiple active reservations (count=${lookup.count})`
+        : lookup.kind === 'none'
+          ? 'no active reservation'
+          : 'reservation quantity mismatch';
+    throw new AppError(
+      `CONFIRMED booking integrity error: ${detail}`,
+      BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+      500
+    );
+  }
+  if (idempotency.idempotent && lookup.kind === 'one') {
+    return Object.freeze({
+      bookingId: booking.id,
+      status: 'CONFIRMED' as const,
+      reservationId: lookup.reservation.id,
+      variantId: lookup.reservation.variantId,
+      quantity: lookup.reservation.quantity,
+      idempotent: true,
+    });
+  }
+
+  // 3. Status transition guard.
+  const preflightError = preflightConfirm(currentStatus);
+  if (preflightError !== null) {
+    throw new ConflictError(
+      `Cannot confirm booking from status=${currentStatus}`
+    );
+  }
+
+  // 4. Atomic conditional reserve. Concurrency-safe.
+  //    Postgres locks the variant row during UPDATE; the predicate is
+  //    evaluated at lock time so two concurrent transactions cannot both
+  //    pass.
+  const updatedRows = await tx.$executeRaw`
+    UPDATE "ProductVariant"
+    SET "reservedQty" = "reservedQty" + ${booking.quantity}
+    WHERE "id" = ${variantId}
+      AND "quantity" - "reservedQty" >= ${booking.quantity}
+  `;
+
+  if (updatedRows !== 1) {
+    // Verify variant exists at all so we can distinguish 404 from stock denial.
+    const variantExists = await tx.productVariant.findUnique({
+      where: { id: variantId },
+      select: { id: true },
+    });
+    if (!variantExists) {
+      throw new AppError(
+        `Variant ${variantId} not found`,
+        BOOKING_ERROR_CODES.VARIANT_NOT_FOUND,
+        404
+      );
+    }
+    throw new AppError(
+      `Insufficient stock to reserve ${booking.quantity} for variant ${variantId}`,
+      BOOKING_ERROR_CODES.INSUFFICIENT_STOCK,
+      409
+    );
+  }
+
+  // 5. Create StockReservation row tied to this booking.
+  const reservation = await tx.stockReservation.create({
+    data: {
+      variantId,
+      bookingId: booking.id,
+      quantity: booking.quantity,
+      expiresAt: NO_EXPIRY_SENTINEL,
+    },
+    select: { id: true },
+  });
+
+  // 6. Update booking status + confirmedAt.
+  const now = new Date();
+  await tx.booking.update({
+    where: { id: booking.id },
+    data: {
+      status: 'CONFIRMED',
+      confirmedAt: now,
+    },
+  });
+
+  // 7. Audit history.
+  await tx.bookingHistory.create({
+    data: {
+      bookingId: booking.id,
+      fromStatus: currentStatus,
+      toStatus: 'CONFIRMED',
+      changedById,
+    },
+  });
+
+  return Object.freeze({
+    bookingId: booking.id,
+    status: 'CONFIRMED' as const,
+    reservationId: reservation.id,
+    variantId,
+    quantity: booking.quantity,
+    idempotent: false,
+  });
+}
+
 // ─── Repository ──────────────────────────────────────────────────────────
 
 export const bookingRepository = Object.freeze({
@@ -136,188 +339,7 @@ export const bookingRepository = Object.freeze({
    * active StockReservation returns success without side effects.
    */
   async confirm(input: ConfirmBookingInput): Promise<ConfirmBookingResult> {
-    const { bookingId, shopId, changedById } = input;
-
-    return prisma.$transaction(async (tx) => {
-      // 1. Read booking + broadcast product (with variant→product.shopId for
-      //    cross-shop defense) + active reservations for this booking.
-      const booking = await tx.booking.findFirst({
-        where: { id: bookingId, shopId },
-        include: {
-          broadcastProduct: {
-            select: {
-              id: true,
-              variantId: true,
-              variant: {
-                select: {
-                  id: true,
-                  product: { select: { shopId: true } },
-                },
-              },
-            },
-          },
-          stockReservations: {
-            where: { releasedAt: null },
-            select: {
-              id: true,
-              variantId: true,
-              quantity: true,
-              bookingId: true,
-              releasedAt: true,
-            },
-          },
-        },
-      });
-
-      if (!booking) {
-        throw new NotFoundError('Booking not found');
-      }
-      if (!booking.broadcastProduct) {
-        // Should be impossible given FK, but defensive.
-        throw new AppError(
-          'BroadcastProduct not found for booking',
-          BOOKING_ERROR_CODES.BROADCAST_PRODUCT_NOT_FOUND,
-          404
-        );
-      }
-
-      const variantId = booking.broadcastProduct.variantId;
-      if (!variantId) {
-        throw new AppError(
-          'BroadcastProduct has no variantId; whole-product bookings not supported in Phase 1',
-          BOOKING_ERROR_CODES.VARIANT_REQUIRED,
-          422
-        );
-      }
-
-      // Defense-in-depth: BroadcastProduct.variantId could in principle point
-      // to a Variant whose Product belongs to a different shop (no schema-level
-      // CHECK constraint). Reject to prevent cross-shop stock reservation.
-      const variantProductShopId =
-        booking.broadcastProduct.variant?.product.shopId;
-      if (!variantProductShopId || variantProductShopId !== shopId) {
-        throw new AppError(
-          'BroadcastProduct variant belongs to a different shop',
-          BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
-          500
-        );
-      }
-
-      const currentStatus = booking.status as BookingStatus;
-      const reservationSnapshots = booking.stockReservations.map(toReservationSnapshot);
-      const lookup = resolveActiveReservation(reservationSnapshots, booking.id);
-
-      // 2. Idempotency path — already CONFIRMED. Multi-active is always
-      //    integrity error (caught by isAlreadyConfirmedIdempotent on
-      //    `kind: 'multiple'`).
-      const idempotency = isAlreadyConfirmedIdempotent(
-        currentStatus,
-        lookup,
-        booking.quantity
-      );
-      if (idempotency.integrityError) {
-        const detail =
-          lookup.kind === 'multiple'
-            ? `multiple active reservations (count=${lookup.count})`
-            : lookup.kind === 'none'
-              ? 'no active reservation'
-              : 'reservation quantity mismatch';
-        throw new AppError(
-          `CONFIRMED booking integrity error: ${detail}`,
-          BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
-          500
-        );
-      }
-      if (idempotency.idempotent && lookup.kind === 'one') {
-        return Object.freeze({
-          bookingId: booking.id,
-          status: 'CONFIRMED' as const,
-          reservationId: lookup.reservation.id,
-          variantId: lookup.reservation.variantId,
-          quantity: lookup.reservation.quantity,
-          idempotent: true,
-        });
-      }
-
-      // 3. Status transition guard.
-      const preflightError = preflightConfirm(currentStatus);
-      if (preflightError !== null) {
-        throw new ConflictError(
-          `Cannot confirm booking from status=${currentStatus}`
-        );
-      }
-
-      // 4. Atomic conditional reserve. Concurrency-safe.
-      //    Postgres locks the variant row during UPDATE; the predicate is
-      //    evaluated at lock time so two concurrent transactions cannot both
-      //    pass.
-      const updatedRows = await tx.$executeRaw`
-        UPDATE "ProductVariant"
-        SET "reservedQty" = "reservedQty" + ${booking.quantity}
-        WHERE "id" = ${variantId}
-          AND "quantity" - "reservedQty" >= ${booking.quantity}
-      `;
-
-      if (updatedRows !== 1) {
-        // Verify variant exists at all so we can distinguish 404 from stock denial.
-        const variantExists = await tx.productVariant.findUnique({
-          where: { id: variantId },
-          select: { id: true },
-        });
-        if (!variantExists) {
-          throw new AppError(
-            `Variant ${variantId} not found`,
-            BOOKING_ERROR_CODES.VARIANT_NOT_FOUND,
-            404
-          );
-        }
-        throw new AppError(
-          `Insufficient stock to reserve ${booking.quantity} for variant ${variantId}`,
-          BOOKING_ERROR_CODES.INSUFFICIENT_STOCK,
-          409
-        );
-      }
-
-      // 5. Create StockReservation row tied to this booking.
-      const reservation = await tx.stockReservation.create({
-        data: {
-          variantId,
-          bookingId: booking.id,
-          quantity: booking.quantity,
-          expiresAt: NO_EXPIRY_SENTINEL,
-        },
-        select: { id: true },
-      });
-
-      // 6. Update booking status + confirmedAt.
-      const now = new Date();
-      await tx.booking.update({
-        where: { id: booking.id },
-        data: {
-          status: 'CONFIRMED',
-          confirmedAt: now,
-        },
-      });
-
-      // 7. Audit history.
-      await tx.bookingHistory.create({
-        data: {
-          bookingId: booking.id,
-          fromStatus: currentStatus,
-          toStatus: 'CONFIRMED',
-          changedById,
-        },
-      });
-
-      return Object.freeze({
-        bookingId: booking.id,
-        status: 'CONFIRMED' as const,
-        reservationId: reservation.id,
-        variantId,
-        quantity: booking.quantity,
-        idempotent: false,
-      });
-    });
+    return prisma.$transaction((tx) => _runConfirmInTx(tx, input));
   },
 
   /**
