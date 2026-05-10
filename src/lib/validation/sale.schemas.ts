@@ -32,3 +32,41 @@ export const createOrderFromBookingsBodySchema = z.object({
 });
 
 export type CreateOrderFromBookingsBody = z.infer<typeof createOrderFromBookingsBodySchema>;
+
+// ─── GET /api/sale/live-sessions (Commit 2P) ──────────────────────────────
+
+export const SALE_LIVE_STATUSES = ['SCHEDULED', 'LIVE', 'ENDED'] as const;
+
+export const saleLiveSessionsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(SALE_LIVE_STATUSES).optional(),
+});
+
+export type SaleLiveSessionsQuery = z.infer<typeof saleLiveSessionsQuerySchema>;
+
+// ─── GET /api/sale/bookings (Commit 2R) ───────────────────────────────────
+
+export const SALE_BOOKING_STATUSES = [
+  'PENDING_REVIEW',
+  'CONFIRMED',
+  'CANCELLED',
+  'EXPIRED',
+  'CONVERTED_TO_ORDER',
+] as const;
+
+export const saleBookingsQuerySchema = z.object({
+  liveSessionId: z
+    .string()
+    .min(1, 'liveSessionId is required')
+    .max(128, 'liveSessionId is too long'),
+  status: z.enum(SALE_BOOKING_STATUSES).optional(),
+  customerId: z
+    .string()
+    .min(1, 'customerId must be non-empty')
+    .max(128, 'customerId is too long')
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export type SaleBookingsQuery = z.infer<typeof saleBookingsQuerySchema>;
