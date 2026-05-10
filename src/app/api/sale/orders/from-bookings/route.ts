@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
 import { toAppError } from '@/lib/errors';
-import { validateBody } from '@/lib/validation/middleware';
+import { validateBody, withRateLimit } from '@/lib/validation/middleware';
 import { createOrderFromBookingsBodySchema } from '@/lib/validation/sale.schemas';
 import { bookingRepository } from '@/server/repositories/booking.repository';
 import { logActivity } from '@/server/services/activity.service';
@@ -33,69 +33,71 @@ import { logActivity } from '@/server/services/activity.service';
  * - docs/superpowers/2026-04-06-sale-mvp-dissent.md
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  try {
-    const user = await requireAuth();
+  return withRateLimit(request, async () => {
+    try {
+      const user = await requireAuth();
 
-    if (!user.shopId) {
-      return NextResponse.json(error('No shop associated with your account'), {
-        status: 403,
-      });
-    }
+      if (!user.shopId) {
+        return NextResponse.json(error('No shop associated with your account'), {
+          status: 403,
+        });
+      }
 
-    if (!['OWNER', 'MANAGER'].includes(user.role)) {
-      return NextResponse.json(error('Insufficient permissions'), { status: 403 });
-    }
+      if (!['OWNER', 'MANAGER'].includes(user.role)) {
+        return NextResponse.json(error('Insufficient permissions'), { status: 403 });
+      }
 
-    const bodyResult = await validateBody(request, createOrderFromBookingsBodySchema);
-    if ('error' in bodyResult) return bodyResult.error;
+      const bodyResult = await validateBody(request, createOrderFromBookingsBodySchema);
+      if ('error' in bodyResult) return bodyResult.error;
 
-    const { liveSessionId, customerId, bookingIds } = bodyResult.data;
+      const { liveSessionId, customerId, bookingIds } = bodyResult.data;
 
-    const result = await bookingRepository.convertToOrder({
-      shopId: user.shopId,
-      liveSessionId,
-      customerId,
-      changedById: user.id,
-      bookingIds,
-    });
-
-    // Activity log only on real conversion (not idempotent re-call) per
-    // existing pattern (see /api/sale/bookings/.../confirm route).
-    if (!result.idempotent) {
-      logActivity({
+      const result = await bookingRepository.convertToOrder({
         shopId: user.shopId,
-        userId: user.id,
-        userName: user.name,
-        action: 'ORDER_CREATED_FROM_BOOKINGS',
-        entity: 'order',
-        entityId: result.orderId,
-        description: `Order ${result.orderNumber} created from ${result.bookingCount} confirmed booking(s)`,
-        metadata: {
+        liveSessionId,
+        customerId,
+        changedById: user.id,
+        bookingIds,
+      });
+
+      // Activity log only on real conversion (not idempotent re-call) per
+      // existing pattern (see /api/sale/bookings/.../confirm route).
+      if (!result.idempotent) {
+        logActivity({
+          shopId: user.shopId,
+          userId: user.id,
+          userName: user.name,
+          action: 'ORDER_CREATED_FROM_BOOKINGS',
+          entity: 'order',
+          entityId: result.orderId,
+          description: `Order ${result.orderNumber} created from ${result.bookingCount} confirmed booking(s)`,
+          metadata: {
+            orderId: result.orderId,
+            orderNumber: result.orderNumber,
+            bookingCount: result.bookingCount,
+            bookingIds: [...result.bookingIds],
+            totalAmount: result.totalAmount,
+            liveSessionId,
+            customerId,
+          },
+        }).catch(() => {});
+      }
+
+      return NextResponse.json(
+        ok({
           orderId: result.orderId,
           orderNumber: result.orderNumber,
+          status: result.status,
+          idempotent: result.idempotent,
           bookingCount: result.bookingCount,
           bookingIds: [...result.bookingIds],
           totalAmount: result.totalAmount,
-          liveSessionId,
-          customerId,
-        },
-      }).catch(() => {});
+          currency: 'MYR' as const,
+        })
+      );
+    } catch (err) {
+      const appErr = toAppError(err);
+      return NextResponse.json(error(appErr.message), { status: appErr.status });
     }
-
-    return NextResponse.json(
-      ok({
-        orderId: result.orderId,
-        orderNumber: result.orderNumber,
-        status: result.status,
-        idempotent: result.idempotent,
-        bookingCount: result.bookingCount,
-        bookingIds: [...result.bookingIds],
-        totalAmount: result.totalAmount,
-        currency: 'MYR' as const,
-      })
-    );
-  } catch (err) {
-    const appErr = toAppError(err);
-    return NextResponse.json(error(appErr.message), { status: appErr.status });
-  }
+  });
 }

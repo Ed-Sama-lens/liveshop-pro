@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
 import { ok, error } from '@/lib/api/response';
 import { toAppError } from '@/lib/errors';
-import { validateBody } from '@/lib/validation/middleware';
+import { validateBody, withRateLimit } from '@/lib/validation/middleware';
 import { createBookingBodySchema } from '@/lib/validation/booking.schemas';
 import { bookingRepository } from '@/server/repositories/booking.repository';
 import { logActivity } from '@/server/services/activity.service';
@@ -51,87 +51,89 @@ import { logActivity } from '@/server/services/activity.service';
  * Repository contract: src/server/repositories/booking.repository.ts
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  try {
-    const user = await requireAuth();
+  return withRateLimit(request, async () => {
+    try {
+      const user = await requireAuth();
 
-    if (!user.shopId) {
-      return NextResponse.json(error('No shop associated with your account'), {
-        status: 403,
-      });
-    }
+      if (!user.shopId) {
+        return NextResponse.json(error('No shop associated with your account'), {
+          status: 403,
+        });
+      }
 
-    if (!['OWNER', 'MANAGER'].includes(user.role)) {
-      return NextResponse.json(error('Insufficient permissions'), { status: 403 });
-    }
+      if (!['OWNER', 'MANAGER'].includes(user.role)) {
+        return NextResponse.json(error('Insufficient permissions'), { status: 403 });
+      }
 
-    const bodyResult = await validateBody(request, createBookingBodySchema);
-    if ('error' in bodyResult) return bodyResult.error;
+      const bodyResult = await validateBody(request, createBookingBodySchema);
+      if ('error' in bodyResult) return bodyResult.error;
 
-    const {
-      liveSessionId,
-      customerId,
-      broadcastProductId,
-      quantity,
-      status,
-      idempotencyKey,
-    } = bodyResult.data;
-
-    const result = await bookingRepository.createManual({
-      shopId: user.shopId,
-      liveSessionId,
-      customerId,
-      broadcastProductId,
-      quantity,
-      status,
-      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-      changedById: user.id,
-    });
-
-    // Activity log (non-blocking — never fail the response on logging error).
-    // Skip on idempotent replay so re-clicks don't multiply audit rows.
-    if (!result.idempotent) {
-      const action =
-        result.status === 'CONFIRMED'
-          ? 'BOOKING_CREATED_AND_CONFIRMED'
-          : 'BOOKING_CREATED_MANUAL';
-      logActivity({
-        shopId: user.shopId,
-        userId: user.id,
-        userName: user.name,
-        action,
-        entity: 'booking',
-        entityId: result.bookingId,
-        description: `Booking ${result.bookingId} ${action.toLowerCase()} (qty ${result.quantity})`,
-        metadata: {
-          liveSessionId,
-          customerId,
-          broadcastProductId,
-          quantity: result.quantity,
-          status: result.status,
-          unitPrice: result.unitPrice,
-          reservationId: result.reservationId,
-        },
-      }).catch(() => {});
-    }
-
-    return NextResponse.json(
-      ok({
-        bookingId: result.bookingId,
-        status: result.status,
-        quantity: result.quantity,
-        unitPrice: formatMoney2(result.unitPrice),
-        broadcastProductId,
-        customerId,
+      const {
         liveSessionId,
-        idempotent: result.idempotent,
-        reservation:
-          result.reservationId !== null ? { id: result.reservationId } : null,
-      })
-    );
-  } catch (err) {
-    const appErr = toAppError(err);
-    return NextResponse.json(error(appErr.message), { status: appErr.status });
-  }
+        customerId,
+        broadcastProductId,
+        quantity,
+        status,
+        idempotencyKey,
+      } = bodyResult.data;
+
+      const result = await bookingRepository.createManual({
+        shopId: user.shopId,
+        liveSessionId,
+        customerId,
+        broadcastProductId,
+        quantity,
+        status,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        changedById: user.id,
+      });
+
+      // Activity log (non-blocking — never fail the response on logging error).
+      // Skip on idempotent replay so re-clicks don't multiply audit rows.
+      if (!result.idempotent) {
+        const action =
+          result.status === 'CONFIRMED'
+            ? 'BOOKING_CREATED_AND_CONFIRMED'
+            : 'BOOKING_CREATED_MANUAL';
+        logActivity({
+          shopId: user.shopId,
+          userId: user.id,
+          userName: user.name,
+          action,
+          entity: 'booking',
+          entityId: result.bookingId,
+          description: `Booking ${result.bookingId} ${action.toLowerCase()} (qty ${result.quantity})`,
+          metadata: {
+            liveSessionId,
+            customerId,
+            broadcastProductId,
+            quantity: result.quantity,
+            status: result.status,
+            unitPrice: result.unitPrice,
+            reservationId: result.reservationId,
+          },
+        }).catch(() => {});
+      }
+
+      return NextResponse.json(
+        ok({
+          bookingId: result.bookingId,
+          status: result.status,
+          quantity: result.quantity,
+          unitPrice: formatMoney2(result.unitPrice),
+          broadcastProductId,
+          customerId,
+          liveSessionId,
+          idempotent: result.idempotent,
+          reservation:
+            result.reservationId !== null ? { id: result.reservationId } : null,
+        })
+      );
+    } catch (err) {
+      const appErr = toAppError(err);
+      return NextResponse.json(error(appErr.message), { status: appErr.status });
+    }
+  });
 }
 
 /**
