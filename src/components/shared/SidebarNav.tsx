@@ -78,6 +78,12 @@ export const NAV_GROUPS: readonly NavGroupDef[] = [
         roles: ['OWNER', 'MANAGER'],
       },
       {
+        labelKey: 'liveSale',
+        href: '/sale',
+        icon: Radio,
+        roles: ['OWNER', 'MANAGER', 'CHAT_SUPPORT'],
+      },
+      {
         labelKey: 'chat',
         href: '/chat',
         icon: MessageSquare,
