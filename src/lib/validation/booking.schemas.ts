@@ -36,3 +36,46 @@ export const cancelBookingBodySchema = z.object({
 });
 
 export type CancelBookingBody = z.infer<typeof cancelBookingBodySchema>;
+
+// ─── Manual Create (Commit 2N) ────────────────────────────────────────────
+//
+// POST /api/sale/bookings — admin manual booking creation.
+//
+// shopId + changedById come from the authenticated session. The body
+// only carries the booking inputs the admin chose in the UI. Validation
+// matches the repository contract in
+// src/server/repositories/booking.repository.ts (createManual()).
+
+export const CREATE_BOOKING_STATUSES = ['PENDING_REVIEW', 'CONFIRMED'] as const;
+
+export const createBookingBodySchema = z.object({
+  liveSessionId: z
+    .string()
+    .min(1, 'liveSessionId is required')
+    .max(128, 'liveSessionId is too long'),
+  customerId: z
+    .string()
+    .min(1, 'customerId is required')
+    .max(128, 'customerId is too long'),
+  broadcastProductId: z
+    .string()
+    .min(1, 'broadcastProductId is required')
+    .max(128, 'broadcastProductId is too long'),
+  quantity: z
+    .number()
+    .int('quantity must be an integer')
+    .min(1, 'quantity must be at least 1')
+    .max(999, 'quantity must be at most 999'),
+  status: z.enum(CREATE_BOOKING_STATUSES, {
+    message: 'status must be PENDING_REVIEW or CONFIRMED',
+  }),
+  idempotencyKey: z
+    .string()
+    .regex(
+      /^[A-Za-z0-9_-]{8,128}$/,
+      'idempotencyKey must be 8-128 chars of A-Z, a-z, 0-9, underscore, dash'
+    )
+    .optional(),
+});
+
+export type CreateBookingBody = z.infer<typeof createBookingBodySchema>;
