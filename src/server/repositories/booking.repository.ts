@@ -968,7 +968,13 @@ export const bookingRepository = Object.freeze({
         include: {
           stockReservations: {
             where: { releasedAt: null },
-            select: { id: true, bookingId: true, releasedAt: true },
+            select: {
+              id: true,
+              variantId: true,
+              quantity: true,
+              bookingId: true,
+              releasedAt: true,
+            },
           },
         },
       });
@@ -983,23 +989,38 @@ export const bookingRepository = Object.freeze({
             'idempotencyKey reused with materially different payload'
           );
         }
-        // Pick the active reservation (if any). For a CONFIRMED replay we
-        // expect exactly one; for PENDING_REVIEW we expect zero. Multi-active
-        // would only arise via direct DB tampering — surface it the same
-        // way confirm()/cancel() do (caller-driven integrity check via
-        // resolveActiveReservation in those flows). Here we just return
-        // the first active to keep replay semantics simple; if the row is
-        // corrupted, a follow-up confirm/cancel will surface the integrity
-        // error consistently.
-        const activeReservation = existing.stockReservations.find(
-          (r) => r.bookingId === existing.id && r.releasedAt === null
-        );
+        // 2M-c integrity patch: never silent-pick on multi-active.
+        // resolveActiveReservation returns a discriminated union:
+        //   'none'     → reservationId null (PENDING_REVIEW expected shape)
+        //   'one'      → return that reservation id (CONFIRMED expected shape)
+        //   'multiple' → throw RESERVATION_INTEGRITY_ERROR — same contract
+        //                as confirm()/cancel() use. Replay must not mask
+        //                data corruption; surface it the same place
+        //                confirm/cancel would so admin can investigate
+        //                before further mutation.
+        const snapshots = existing.stockReservations.map(toReservationSnapshot);
+        const lookup = resolveActiveReservation(snapshots, existing.id);
+        let reservationId: string | null;
+        switch (lookup.kind) {
+          case 'none':
+            reservationId = null;
+            break;
+          case 'one':
+            reservationId = lookup.reservation.id;
+            break;
+          case 'multiple':
+            throw new AppError(
+              `Booking has ${lookup.count} active reservations on idempotency replay`,
+              BOOKING_ERROR_CODES.RESERVATION_INTEGRITY_ERROR,
+              500
+            );
+        }
         return Object.freeze({
           bookingId: existing.id,
           status: existing.status as 'PENDING_REVIEW' | 'CONFIRMED',
           unitPrice: existing.unitPrice.toString(),
           quantity: existing.quantity,
-          reservationId: activeReservation?.id ?? null,
+          reservationId,
           idempotent: true,
         });
       }

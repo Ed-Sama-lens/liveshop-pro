@@ -33,6 +33,7 @@ import { PrismaClient } from '../src/generated/prisma';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { bookingRepository } from '../src/server/repositories/booking.repository';
 import { AppError } from '../src/lib/errors';
+import { NO_EXPIRY_SENTINEL } from '../src/lib/sale/booking-rules';
 
 // ─── Production safety guards ────────────────────────────────────────────
 
@@ -938,6 +939,80 @@ async function main(): Promise<void> {
     record('Test 12 — priceOverride captured + frozen', 'PASS');
   } catch (err) {
     record('Test 12 — priceOverride captured + frozen', 'FAIL', (err as Error).message);
+  }
+
+  // ── Test 13: idempotency replay surfaces multi-active reservation corruption (2M-c) ──
+  try {
+    const idempotencyKey = `test13-${runId}`;
+
+    // First: create CONFIRMED booking via the public path so we get a real
+    // first reservation row.
+    const first = await bookingRepository.createManual({
+      shopId: idShop,
+      liveSessionId: idLiveSession,
+      customerId: idCustomer,
+      broadcastProductId: idBP,
+      quantity: 1,
+      status: 'CONFIRMED',
+      idempotencyKey,
+      changedById: idUser,
+    });
+    assert(first.idempotent === false, 'first call should not be idempotent');
+    assert(first.reservationId !== null, 'first CONFIRMED must have a reservationId');
+
+    // Inject a SECOND active StockReservation directly to simulate corruption.
+    // This mirrors the verify-booking-flow Test 6 multi-active simulation.
+    await prisma.stockReservation.create({
+      data: {
+        variantId: idVariant,
+        bookingId: first.bookingId,
+        quantity: 1,
+        expiresAt: NO_EXPIRY_SENTINEL,
+      },
+    });
+
+    // Replay with same key + same payload should now surface the integrity
+    // error rather than silently picking the first active reservation.
+    let threw = false;
+    let code: string | undefined;
+    try {
+      await bookingRepository.createManual({
+        shopId: idShop,
+        liveSessionId: idLiveSession,
+        customerId: idCustomer,
+        broadcastProductId: idBP,
+        quantity: 1,
+        status: 'CONFIRMED',
+        idempotencyKey,
+        changedById: idUser,
+      });
+    } catch (err) {
+      threw = true;
+      if (err instanceof AppError) code = err.code;
+    }
+
+    assert(threw, 'expected multi-active replay to throw');
+    assert(
+      code === 'RESERVATION_INTEGRITY_ERROR',
+      `expected RESERVATION_INTEGRITY_ERROR, got ${code ?? 'no AppError'}`
+    );
+
+    // Confirm replay did NOT mutate state: still 2 active reservations,
+    // booking still CONFIRMED, no extra history rows.
+    const reservationsAfter = await prisma.stockReservation.count({
+      where: { bookingId: first.bookingId, releasedAt: null },
+    });
+    assert(
+      reservationsAfter === 2,
+      `expected 2 active reservations (corruption preserved for inspection), got ${reservationsAfter}`
+    );
+
+    const booking = await prisma.booking.findUniqueOrThrow({ where: { id: first.bookingId } });
+    assert(booking.status === 'CONFIRMED', 'booking status must remain CONFIRMED on failed replay');
+
+    record('Test 13 — Multi-active replay surfaces integrity error (2M-c)', 'PASS', `code=${code}`);
+  } catch (err) {
+    record('Test 13 — Multi-active replay surfaces integrity error (2M-c)', 'FAIL', (err as Error).message);
   }
 
   // ── Cleanup ──
