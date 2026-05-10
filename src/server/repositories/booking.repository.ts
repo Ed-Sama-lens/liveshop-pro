@@ -1,6 +1,6 @@
 import { Prisma } from '@/generated/prisma';
 import { prisma } from '@/lib/db/prisma';
-import { AppError, ConflictError, NotFoundError } from '@/lib/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import {
   BOOKING_ERROR_CODES,
   NO_EXPIRY_SENTINEL,
@@ -106,6 +106,50 @@ export interface ConvertBookingsToOrderResult {
   readonly bookingIds: readonly string[];
   /** Order total as decimal-string (e.g. "120.00"). */
   readonly totalAmount: string;
+}
+
+// ─── createManual (Commit 2M-b) ──────────────────────────────────────────
+
+/**
+ * Input for `bookingRepository.createManual()`.
+ *
+ * Used by /sale admin UI (Commit 2L) and POST /api/sale/bookings (Commit 2N)
+ * to create a single booking without going through any inbound message
+ * parser. All fields are admin-supplied; no platform integration.
+ */
+export interface CreateManualBookingInput {
+  readonly shopId: string;
+  readonly liveSessionId: string;
+  readonly customerId: string;
+  readonly broadcastProductId: string;
+  readonly quantity: number;
+  /**
+   * Initial status:
+   * - `PENDING_REVIEW` → booking only, no stock reservation
+   * - `CONFIRMED`      → booking + stock reservation in one transaction
+   *                      (rolls back entire booking if reserve fails)
+   */
+  readonly status: 'PENDING_REVIEW' | 'CONFIRMED';
+  /**
+   * Optional admin-supplied idempotency key. When present, repeated calls
+   * with the same `(shopId, idempotencyKey)` return the existing booking
+   * idempotently. Format: `^[A-Za-z0-9_-]{8,128}$`.
+   */
+  readonly idempotencyKey?: string;
+  /** Admin User.id who triggered the create. Stored on Booking.createdById and BookingHistory.changedById. */
+  readonly changedById: string;
+}
+
+export interface CreateManualBookingResult {
+  readonly bookingId: string;
+  readonly status: 'PENDING_REVIEW' | 'CONFIRMED';
+  /** Captured at creation time from BroadcastProduct.priceOverride ?? ProductVariant.price. */
+  readonly unitPrice: string;
+  readonly quantity: number;
+  /** Set when status === 'CONFIRMED'. Null when PENDING_REVIEW. */
+  readonly reservationId: string | null;
+  /** True when an existing booking was returned via idempotencyKey replay. */
+  readonly idempotent: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -820,6 +864,254 @@ export const bookingRepository = Object.freeze({
         bookingCount: bookingIdList.length,
         bookingIds: Object.freeze([...bookingIdList]),
         totalAmount: totals.total,
+      });
+    });
+  },
+
+  /**
+   * Create a single Booking via admin manual entry (Commit 2M-b).
+   *
+   * Source is always `MANUAL`. The route handler (Commit 2N) and /sale UI
+   * (Commit 2L+) are the only callers. No platform integration, no parser,
+   * no inbound message linkage.
+   *
+   * Status branches:
+   * - `PENDING_REVIEW` → insert Booking + write null→PENDING_REVIEW history.
+   *                     No StockReservation. Stock unchanged.
+   * - `CONFIRMED`      → open ONE prisma.$transaction:
+   *                      1. insert Booking as PENDING_REVIEW
+   *                      2. write null→PENDING_REVIEW history
+   *                      3. call _runConfirmInTx(tx, ...) inline (writes
+   *                         PENDING_REVIEW→CONFIRMED history + reserves
+   *                         stock + creates StockReservation)
+   *                      If step 3 throws (insufficient stock / cross-shop
+   *                      / etc.) the entire transaction rolls back and no
+   *                      orphan PENDING_REVIEW booking is left.
+   *
+   * Validation (all-or-nothing before any write):
+   * - quantity is integer in [1, 999]
+   * - idempotencyKey, when supplied, matches /^[A-Za-z0-9_-]{8,128}$/
+   * - Customer exists, belongs to shopId, and `isBanned === false`
+   * - BroadcastProduct exists, belongs to liveSessionId, has variantId set
+   * - LiveSession.shopId === shopId (BroadcastProduct has no direct shopId
+   *   so we verify scope through its parent LiveSession)
+   * - ProductVariant.product.shopId === shopId (cross-shop defense)
+   *
+   * unitPrice is captured at creation time from
+   * `BroadcastProduct.priceOverride ?? ProductVariant.price`. Decimal is
+   * serialized via `.toString()` so the snapshot survives later
+   * priceOverride mutations.
+   *
+   * Idempotency:
+   * - When `idempotencyKey` is omitted, a new Booking is always created;
+   *   duplicate (customer, broadcastProduct, session) calls produce
+   *   separate Booking rows. Order conversion consolidates later.
+   * - When supplied, we look up an existing Booking by the unique
+   *   `(shopId, idempotencyKey)` constraint. If found, we return it
+   *   idempotently provided the material payload matches
+   *   (liveSessionId, customerId, broadcastProductId, quantity). Mismatch
+   *   throws `ConflictError` so callers cannot reuse a key with different
+   *   payload. The status field is allowed to differ (a CONFIRMED replay
+   *   of a previously CONFIRMED booking is the expected idempotent
+   *   shape; we do NOT downgrade or re-confirm on replay).
+   *
+   * BookingHistory:
+   * - PENDING_REVIEW path → 1 row: fromStatus=null, toStatus=PENDING_REVIEW
+   * - CONFIRMED path      → 2 rows in order:
+   *                         (a) null→PENDING_REVIEW (created here)
+   *                         (b) PENDING_REVIEW→CONFIRMED (created by _runConfirmInTx)
+   *
+   * No customer-facing message generation. No platform send. No order
+   * write. No checkout/payment touch. Exits without side-effects on any
+   * validation failure.
+   */
+  async createManual(
+    input: CreateManualBookingInput
+  ): Promise<CreateManualBookingResult> {
+    const {
+      shopId,
+      liveSessionId,
+      customerId,
+      broadcastProductId,
+      quantity,
+      status,
+      idempotencyKey,
+      changedById,
+    } = input;
+
+    // ─── 1. Pure-input validation (no DB) ────────────────────────────
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      throw new ValidationError('quantity must be an integer between 1 and 999', {
+        quantity: ['must be integer in [1, 999]'],
+      });
+    }
+    if (idempotencyKey !== undefined && !/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)) {
+      throw new ValidationError(
+        'idempotencyKey must match /^[A-Za-z0-9_-]{8,128}$/',
+        { idempotencyKey: ['invalid format'] }
+      );
+    }
+
+    // ─── 2. Idempotency replay path (pre-transaction lookup) ─────────
+    // Only query when key is supplied — Booking.idempotencyKey is nullable
+    // and `findUnique` with null on a compound unique would either match
+    // unrelated rows or throw. The repository contract guarantees we never
+    // dispatch a findUnique with `idempotencyKey: null`.
+    if (idempotencyKey !== undefined) {
+      const existing = await prisma.booking.findUnique({
+        where: {
+          shopId_idempotencyKey: {
+            shopId,
+            idempotencyKey,
+          },
+        },
+        include: {
+          stockReservations: {
+            where: { releasedAt: null },
+            select: { id: true, bookingId: true, releasedAt: true },
+          },
+        },
+      });
+      if (existing) {
+        const payloadMatches =
+          existing.liveSessionId === liveSessionId &&
+          existing.customerId === customerId &&
+          existing.broadcastProductId === broadcastProductId &&
+          existing.quantity === quantity;
+        if (!payloadMatches) {
+          throw new ConflictError(
+            'idempotencyKey reused with materially different payload'
+          );
+        }
+        // Pick the active reservation (if any). For a CONFIRMED replay we
+        // expect exactly one; for PENDING_REVIEW we expect zero. Multi-active
+        // would only arise via direct DB tampering — surface it the same
+        // way confirm()/cancel() do (caller-driven integrity check via
+        // resolveActiveReservation in those flows). Here we just return
+        // the first active to keep replay semantics simple; if the row is
+        // corrupted, a follow-up confirm/cancel will surface the integrity
+        // error consistently.
+        const activeReservation = existing.stockReservations.find(
+          (r) => r.bookingId === existing.id && r.releasedAt === null
+        );
+        return Object.freeze({
+          bookingId: existing.id,
+          status: existing.status as 'PENDING_REVIEW' | 'CONFIRMED',
+          unitPrice: existing.unitPrice.toString(),
+          quantity: existing.quantity,
+          reservationId: activeReservation?.id ?? null,
+          idempotent: true,
+        });
+      }
+    }
+
+    // ─── 3. Customer scope + ban gate (read-only outside tx) ─────────
+    const customer = await prisma.customer.findFirst({
+      where: { id: customerId, shopId },
+      select: { id: true, isBanned: true },
+    });
+    if (!customer) {
+      throw new NotFoundError('Customer not found for this shop');
+    }
+    if (customer.isBanned) {
+      throw new ConflictError('Customer is banned and cannot place bookings');
+    }
+
+    // ─── 4. BroadcastProduct + LiveSession + Variant.product cross-shop check ─
+    const bp = await prisma.broadcastProduct.findFirst({
+      where: { id: broadcastProductId, liveSessionId },
+      select: {
+        id: true,
+        liveSessionId: true,
+        variantId: true,
+        priceOverride: true,
+        liveSession: { select: { shopId: true } },
+        variant: {
+          select: {
+            id: true,
+            price: true,
+            product: { select: { shopId: true } },
+          },
+        },
+      },
+    });
+    if (!bp) {
+      throw new NotFoundError('BroadcastProduct not found for this live session');
+    }
+    if (bp.liveSession.shopId !== shopId) {
+      throw new ConflictError('BroadcastProduct belongs to a different shop');
+    }
+    if (!bp.variantId || !bp.variant) {
+      throw new AppError(
+        'BroadcastProduct has no variantId; whole-product bookings not supported',
+        BOOKING_ERROR_CODES.VARIANT_REQUIRED,
+        422
+      );
+    }
+    if (bp.variant.product.shopId !== shopId) {
+      throw new ConflictError('BroadcastProduct variant belongs to a different shop');
+    }
+
+    // ─── 5. Capture unitPrice snapshot ───────────────────────────────
+    const unitPriceDecimal = bp.priceOverride ?? bp.variant.price;
+    const unitPrice = unitPriceDecimal.toString();
+
+    // ─── 6. Transactional write ──────────────────────────────────────
+    return prisma.$transaction(async (tx) => {
+      const created = await tx.booking.create({
+        data: {
+          shopId,
+          liveSessionId,
+          customerId,
+          broadcastProductId,
+          quantity,
+          unitPrice,
+          status: 'PENDING_REVIEW',
+          source: 'MANUAL',
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+          createdById: changedById,
+        },
+        select: { id: true },
+      });
+
+      await tx.bookingHistory.create({
+        data: {
+          bookingId: created.id,
+          fromStatus: null,
+          toStatus: 'PENDING_REVIEW',
+          changedById,
+        },
+      });
+
+      if (status === 'PENDING_REVIEW') {
+        return Object.freeze({
+          bookingId: created.id,
+          status: 'PENDING_REVIEW' as const,
+          unitPrice,
+          quantity,
+          reservationId: null,
+          idempotent: false,
+        });
+      }
+
+      // status === 'CONFIRMED' — call helper inline. _runConfirmInTx
+      // writes the second BookingHistory row (PENDING_REVIEW→CONFIRMED),
+      // reserves stock atomically, and creates the StockReservation. Any
+      // throw here (insufficient stock, cross-shop variant, etc.) rolls
+      // back the entire transaction including the booking insert above.
+      const confirmResult = await _runConfirmInTx(tx, {
+        bookingId: created.id,
+        shopId,
+        changedById,
+      });
+
+      return Object.freeze({
+        bookingId: created.id,
+        status: 'CONFIRMED' as const,
+        unitPrice,
+        quantity,
+        reservationId: confirmResult.reservationId,
+        idempotent: false,
       });
     });
   },
