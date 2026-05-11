@@ -130,14 +130,27 @@ export async function GET(
       },
     });
 
+    let filteredInvalidCount = 0;
     const products = rows
       .filter((r) => {
         // Cross-shop defense: skip any BP whose variant.product.shopId
         // differs from caller. variant must be present (filtered in
         // where clause). product on the BP itself is also shop-scoped.
-        if (!r.variant) return false;
-        if (r.variant.product.shopId !== user.shopId) return false;
-        if (r.product.shopId !== user.shopId) return false;
+        // Track integrity hits in `filteredInvalidCount` so admin UI
+        // can surface a non-zero count without leaking which specific
+        // rows are corrupt.
+        if (!r.variant) {
+          filteredInvalidCount += 1;
+          return false;
+        }
+        if (r.variant.product.shopId !== user.shopId) {
+          filteredInvalidCount += 1;
+          return false;
+        }
+        if (r.product.shopId !== user.shopId) {
+          filteredInvalidCount += 1;
+          return false;
+        }
         return true;
       })
       .map((r) => {
@@ -177,6 +190,7 @@ export async function GET(
           liveSessionId,
           currency: 'MYR' as const,
           products,
+          filteredInvalidCount,
         }),
       })
     );

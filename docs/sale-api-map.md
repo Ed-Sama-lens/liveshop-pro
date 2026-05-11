@@ -45,9 +45,22 @@ CHAT_SUPPORT can render the /sale page and read the data so they can answer cust
 GET list responses (2P, 2Q, 2R) currently set:
 
 - 2P: `data: { sessions: [...] }, meta: { total, page, limit, totalPages }`
-- 2Q: `data: { liveSessionId, currency: "MYR", products: [...] }`
-- 2R: `data: { liveSessionId, currency: "MYR", bookings: [...] }`
+- 2Q: `data: { liveSessionId, currency: "MYR", products: [...], filteredInvalidCount }`
+- 2R: `data: { liveSessionId, currency: "MYR", bookings: [{ ..., reservationIntegrity, activeReservationCount, activeReservationId }] }`
 - 2N (POST): `data: { bookingId, status, quantity, unitPrice, broadcastProductId, customerId, liveSessionId, idempotent, reservation }`
+
+### Booking `reservationIntegrity` discriminator (added Commit 2T)
+
+| Label | Meaning |
+|---|---|
+| `OK` | `status === 'CONFIRMED'` AND exactly 1 active reservation → `activeReservationId` is set. |
+| `MISSING` | `status === 'CONFIRMED'` AND 0 active reservations → data corruption. Confirm/cancel/convert flows raise `RESERVATION_INTEGRITY_ERROR` on this. |
+| `MULTIPLE` | ≥2 active reservations regardless of status → data corruption. |
+| `NOT_APPLICABLE` | Non-CONFIRMED status (PENDING_REVIEW / CANCELLED / EXPIRED / CONVERTED_TO_ORDER) with 0 or 1 active reservation. `activeReservationId` may still be set when count === 1 (stale-on-terminal hint). |
+
+### Broadcast products `filteredInvalidCount` (added Commit 2T)
+
+Non-zero value means the route rejected one or more BroadcastProduct rows that failed cross-shop defense (null variant, variant.product.shopId mismatch, or product.shopId mismatch). Specific corrupt rows are NOT exposed — admin should investigate via internal data tooling.
 
 ### Error
 ```json
@@ -138,6 +151,7 @@ Never call authenticated POSTs against production.
 
 ## Refs
 
+- Manual smoke (read-only UI): [docs/superpowers/2026-05-11-sale-read-only-manual-smoke.md](superpowers/2026-05-11-sale-read-only-manual-smoke.md)
 - Boss decision doc: [docs/superpowers/2026-04-06-sale-mvp-dissent.md](superpowers/2026-04-06-sale-mvp-dissent.md)
 - Runtime design: [docs/superpowers/2026-05-09-sale-booking-runtime-design.md](superpowers/2026-05-09-sale-booking-runtime-design.md)
 - Conversion design: [docs/superpowers/2026-05-09-booking-to-order-conversion-dissent.md](superpowers/2026-05-09-booking-to-order-conversion-dissent.md)

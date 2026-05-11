@@ -288,8 +288,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const bookings = rows.map((b) => {
       const variant = b.broadcastProduct?.variant ?? null;
       const variantName = describeVariantAttrs(variant?.attributes ?? null);
-      const activeReservationId =
-        b.stockReservations.length === 1 ? b.stockReservations[0].id : null;
+      const activeReservationCount = b.stockReservations.length;
+      const integrity = classifyReservationIntegrity(
+        b.status,
+        b.stockReservations
+      );
       return Object.freeze({
         bookingId: b.id,
         status: b.status,
@@ -309,7 +312,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         confirmedAt: b.confirmedAt,
         cancelledAt: b.cancelledAt,
         convertedOrderId: b.convertedOrderId,
-        activeReservationId,
+        activeReservationId: integrity.activeReservationId,
+        activeReservationCount,
+        reservationIntegrity: integrity.label,
         idempotencyKey: b.idempotencyKey,
       });
     });
@@ -343,4 +348,55 @@ function describeVariantAttrs(attributes: unknown): string | null {
   return entries
     .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
     .join(' · ');
+}
+
+/**
+ * Reservation integrity classifier (Commit 2T).
+ *
+ * Disambiguates the previously-overloaded `activeReservationId: null`
+ * return shape so /sale UI can surface integrity issues to admin
+ * without firing a mutation. Mirrors the discriminated union returned
+ * by `resolveActiveReservation` in src/lib/sale/booking-rules.ts but
+ * adds a `NOT_APPLICABLE` label for non-CONFIRMED booking states where
+ * a missing reservation is expected (PENDING_REVIEW / CANCELLED /
+ * EXPIRED / CONVERTED_TO_ORDER).
+ *
+ * Labels:
+ * - OK             — booking is CONFIRMED and has exactly 1 active reservation
+ * - MISSING        — booking is CONFIRMED but has 0 active reservations
+ *                    (data corruption — confirm/cancel/convert flows raise
+ *                     RESERVATION_INTEGRITY_ERROR on this)
+ * - MULTIPLE       — booking has ≥2 active reservations (also corruption)
+ * - NOT_APPLICABLE — booking is in a non-CONFIRMED state where no active
+ *                    reservation is expected. Returned for both 0 and
+ *                    rare leak cases (≥1 active reservation on
+ *                    CANCELLED/EXPIRED would still surface as MULTIPLE
+ *                    if count ≥ 2; count === 1 returns NOT_APPLICABLE
+ *                    with the id so /sale UI can show "stale reservation
+ *                    on terminal booking" hint).
+ */
+type ReservationIntegrityLabel = 'OK' | 'MISSING' | 'MULTIPLE' | 'NOT_APPLICABLE';
+
+function classifyReservationIntegrity(
+  status: string,
+  activeReservations: ReadonlyArray<{ id: string }>
+): { label: ReservationIntegrityLabel; activeReservationId: string | null } {
+  const count = activeReservations.length;
+  if (count >= 2) {
+    return { label: 'MULTIPLE', activeReservationId: null };
+  }
+  if (status === 'CONFIRMED') {
+    if (count === 1) {
+      return { label: 'OK', activeReservationId: activeReservations[0].id };
+    }
+    return { label: 'MISSING', activeReservationId: null };
+  }
+  // Non-CONFIRMED status — reservation absence is expected.
+  if (count === 1) {
+    return {
+      label: 'NOT_APPLICABLE',
+      activeReservationId: activeReservations[0].id,
+    };
+  }
+  return { label: 'NOT_APPLICABLE', activeReservationId: null };
 }
