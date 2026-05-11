@@ -80,3 +80,108 @@ export function isBookingCancellable(
   if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
   return true;
 }
+
+/**
+ * Pure: is a booking eligible for selection toward Create Order
+ * (Commit 2O-c1)?
+ *
+ * Eligibility rules (per design doc 2026-05-11-sale-create-order-from-
+ * bookings-design.md §2 + Boss 2O-c1 verdict):
+ * - status must be CONFIRMED. PENDING_REVIEW / CANCELLED / EXPIRED /
+ *   CONVERTED_TO_ORDER all blocked.
+ * - reservationIntegrity must be OK / NOT_APPLICABLE / undefined.
+ *   MISSING / MULTIPLE rows block — same reasoning as Cancel: a
+ *   conversion transfers the active reservation to orderId. If
+ *   integrity is broken at this booking, the conversion would propagate
+ *   the error or leave dangling reservations.
+ *
+ * Note: this helper deliberately does NOT enforce the
+ * customer/session lock. The locking is a UI-level concern handled by
+ * `isBookingSelectableInContext` below.
+ */
+export function isBookingSelectable(
+  b: BookingConfirmEligibilityInput
+): boolean {
+  if (b.status !== 'CONFIRMED') return false;
+  const integrity = b.reservationIntegrity;
+  if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
+  return true;
+}
+
+/**
+ * Selection lock context — once admin selects the first booking, the
+ * UI locks subsequent eligibility to bookings that share the same
+ * customer + live session. This matches the server contract:
+ * convertToOrder accepts (shopId, liveSessionId, customerId, bookingIds)
+ * and processes only one customer × session × shop at a time.
+ *
+ * `null` value means no selection yet — all eligible bookings are
+ * selectable. A non-null value narrows eligibility to matching rows.
+ */
+export interface SelectionLockContext {
+  readonly customerId: string;
+  readonly liveSessionId: string;
+}
+
+/**
+ * Input row shape for the in-context selectability check. Wider than
+ * BookingConfirmEligibilityInput because the lock requires customer +
+ * session ids. Callers should pass real `SaleBookingRow` values.
+ */
+export interface BookingSelectionRowInput
+  extends BookingConfirmEligibilityInput {
+  readonly customerId: string;
+  readonly liveSessionId: string;
+}
+
+/**
+ * Pure: is a booking eligible to be selected/unselected given the
+ * current lock context?
+ *
+ * - When `lock` is null: same as `isBookingSelectable(row)`.
+ * - When `lock` is set: row must also match `lock.customerId` and
+ *   `lock.liveSessionId`. Out-of-context rows return false even when
+ *   their status + integrity would otherwise allow selection.
+ *
+ * The lock is established when admin selects the first row; the UI is
+ * expected to clear the lock when the selection size returns to zero.
+ */
+export function isBookingSelectableInContext(
+  row: BookingSelectionRowInput,
+  lock: SelectionLockContext | null
+): boolean {
+  if (!isBookingSelectable(row)) return false;
+  if (lock === null) return true;
+  if (row.customerId !== lock.customerId) return false;
+  if (row.liveSessionId !== lock.liveSessionId) return false;
+  return true;
+}
+
+/**
+ * Pure: derive the lock context from a non-empty selected-row list.
+ * Returns null when the list is empty.
+ *
+ * Throws if rows disagree on customerId or liveSessionId — this should
+ * never happen if the UI correctly gates via `isBookingSelectableInContext`.
+ * The throw is a defensive backstop for future refactors that might
+ * accidentally bypass the lock check.
+ */
+export function deriveSelectionLock(
+  rows: readonly BookingSelectionRowInput[]
+): SelectionLockContext | null {
+  if (rows.length === 0) return null;
+  const first = rows[0];
+  for (const r of rows) {
+    if (r.customerId !== first.customerId) {
+      throw new Error(
+        'deriveSelectionLock: selected rows have mismatched customerId — UI lock bypassed'
+      );
+    }
+    if (r.liveSessionId !== first.liveSessionId) {
+      throw new Error(
+        'deriveSelectionLock: selected rows have mismatched liveSessionId — UI lock bypassed'
+      );
+    }
+  }
+  return { customerId: first.customerId, liveSessionId: first.liveSessionId };
+}
