@@ -2,18 +2,20 @@
 
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { Users, AlertTriangle, AlertOctagon, CheckCircle2 } from 'lucide-react';
+import { Users, AlertTriangle, AlertOctagon, CheckCircle2, XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 import { ConfirmBookingDialog } from './ConfirmBookingDialog';
+import { CancelBookingDialog } from './CancelBookingDialog';
 import {
   isBookingConfirmable,
+  isBookingCancellable,
   type SaleReservationIntegrityLabel as HelperReservationIntegrityLabel,
 } from './booking-queue.helpers';
 
-export { isBookingConfirmable } from './booking-queue.helpers';
+export { isBookingConfirmable, isBookingCancellable } from './booking-queue.helpers';
 
 /**
  * Booking queue — wired to GET /api/sale/bookings (Commit 2S).
@@ -117,6 +119,7 @@ export function SaleBookingQueuePlaceholder({
   onMutationSuccess,
 }: SaleBookingQueueProps) {
   const [confirmTarget, setConfirmTarget] = useState<SaleBookingRow | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<SaleBookingRow | null>(null);
 
   if (state.kind === 'no-session') {
     return (
@@ -179,7 +182,7 @@ export function SaleBookingQueuePlaceholder({
   return (
     <SalePanelCard
       title="Customer Bookings / รายการจอง"
-      subtitle={`${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm พร้อมใช้`}
+      subtitle={`${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm + Cancel พร้อมใช้`}
       icon={Users}
       variant="live"
     >
@@ -188,6 +191,7 @@ export function SaleBookingQueuePlaceholder({
           const badge = STATUS_BADGE[b.status];
           const integrityBadge = renderIntegrityBadge(b.reservationIntegrity);
           const confirmable = isBookingConfirmable(b);
+          const cancellable = isBookingCancellable(b);
           return (
             <div
               key={b.bookingId}
@@ -217,6 +221,17 @@ export function SaleBookingQueuePlaceholder({
                     Confirm
                   </Button>
                 ) : null}
+                {cancellable ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-6 gap-1 px-2 text-[10px]"
+                    onClick={() => setCancelTarget(b)}
+                  >
+                    <XCircle className="size-3" aria-hidden />
+                    Cancel
+                  </Button>
+                ) : null}
               </div>
             </div>
           );
@@ -229,10 +244,10 @@ export function SaleBookingQueuePlaceholder({
       ) : null}
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled className="flex-1">
-          Cancel / ยกเลิก — ยังไม่เปิดใช้งาน
+          Bulk Confirm — ปิดเฟสนี้
         </Button>
         <Button variant="outline" size="sm" disabled className="flex-1">
-          Bulk Confirm — ปิดเฟสนี้
+          Create Order — ปิดเฟสนี้
         </Button>
       </div>
 
@@ -249,6 +264,25 @@ export function SaleBookingQueuePlaceholder({
           unitPrice={confirmTarget.unitPrice}
           onSuccess={() => {
             setConfirmTarget(null);
+            onMutationSuccess?.();
+          }}
+        />
+      ) : null}
+
+      {cancelTarget ? (
+        <CancelBookingDialog
+          open={cancelTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setCancelTarget(null);
+          }}
+          bookingId={cancelTarget.bookingId}
+          customerName={cancelTarget.customerName}
+          displayCode={cancelTarget.displayCode}
+          quantity={cancelTarget.quantity}
+          unitPrice={cancelTarget.unitPrice}
+          activeReservationId={cancelTarget.activeReservationId}
+          onSuccess={() => {
+            setCancelTarget(null);
             onMutationSuccess?.();
           }}
         />

@@ -16,6 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isBookingConfirmable,
+  isBookingCancellable,
   type BookingConfirmEligibilityInput,
   type SaleBookingLifecycleStatus,
   type SaleReservationIntegrityLabel,
@@ -118,5 +119,123 @@ describe('isBookingConfirmable()', () => {
       // 5 statuses × 5 integrity = 25 total; minus 3 true = 22 false
       expect(falseCases).toHaveLength(22);
     });
+  });
+});
+
+describe('isBookingCancellable()', () => {
+  describe('CONFIRMED eligibility', () => {
+    it('OK integrity → cancellable', () => {
+      expect(isBookingCancellable(row('CONFIRMED', 'OK'))).toBe(true);
+    });
+
+    it('NOT_APPLICABLE integrity → cancellable', () => {
+      expect(isBookingCancellable(row('CONFIRMED', 'NOT_APPLICABLE'))).toBe(true);
+    });
+
+    it('undefined integrity (pre-2T API) → cancellable (graceful degradation)', () => {
+      expect(isBookingCancellable(row('CONFIRMED'))).toBe(true);
+    });
+
+    it('MISSING integrity → NOT cancellable', () => {
+      expect(isBookingCancellable(row('CONFIRMED', 'MISSING'))).toBe(false);
+    });
+
+    it('MULTIPLE integrity → NOT cancellable', () => {
+      expect(isBookingCancellable(row('CONFIRMED', 'MULTIPLE'))).toBe(false);
+    });
+  });
+
+  describe('non-CONFIRMED statuses are never cancellable (per 2O-b spec)', () => {
+    const nonEligibleStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
+      'PENDING_REVIEW',
+      'CANCELLED',
+      'EXPIRED',
+      'CONVERTED_TO_ORDER',
+    ];
+    const integrityLabels: ReadonlyArray<SaleReservationIntegrityLabel | undefined> = [
+      'OK',
+      'MISSING',
+      'MULTIPLE',
+      'NOT_APPLICABLE',
+      undefined,
+    ];
+
+    for (const status of nonEligibleStatuses) {
+      for (const integrity of integrityLabels) {
+        const label = integrity ?? 'undefined';
+        it(`${status} + integrity=${label} → NOT cancellable`, () => {
+          expect(isBookingCancellable(row(status, integrity))).toBe(false);
+        });
+      }
+    }
+  });
+
+  describe('full lifecycle × integrity matrix (Boss 2O-b test plan)', () => {
+    const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
+      'PENDING_REVIEW',
+      'CONFIRMED',
+      'CANCELLED',
+      'EXPIRED',
+      'CONVERTED_TO_ORDER',
+    ];
+    const allIntegrity: ReadonlyArray<SaleReservationIntegrityLabel | undefined> = [
+      'OK',
+      'MISSING',
+      'MULTIPLE',
+      'NOT_APPLICABLE',
+      undefined,
+    ];
+
+    it('only CONFIRMED × {OK, NOT_APPLICABLE, undefined} returns true', () => {
+      const results: Array<{ status: string; integrity: string; allowed: boolean }> = [];
+      for (const status of allStatuses) {
+        for (const integrity of allIntegrity) {
+          results.push({
+            status,
+            integrity: integrity ?? 'undefined',
+            allowed: isBookingCancellable(row(status, integrity)),
+          });
+        }
+      }
+
+      const trueCases = results.filter((r) => r.allowed);
+      // CONFIRMED × 3 allowed integrity labels = 3 true cases
+      expect(trueCases).toHaveLength(3);
+      for (const r of trueCases) {
+        expect(r.status).toBe('CONFIRMED');
+        expect(['OK', 'NOT_APPLICABLE', 'undefined']).toContain(r.integrity);
+      }
+
+      const falseCases = results.filter((r) => !r.allowed);
+      // 5 statuses × 5 integrity = 25 total; minus 3 true = 22 false
+      expect(falseCases).toHaveLength(22);
+    });
+  });
+});
+
+describe('confirmable/cancellable mutual exclusivity', () => {
+  it('a single row is never both confirmable and cancellable', () => {
+    const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
+      'PENDING_REVIEW',
+      'CONFIRMED',
+      'CANCELLED',
+      'EXPIRED',
+      'CONVERTED_TO_ORDER',
+    ];
+    const allIntegrity: ReadonlyArray<SaleReservationIntegrityLabel | undefined> = [
+      'OK',
+      'MISSING',
+      'MULTIPLE',
+      'NOT_APPLICABLE',
+      undefined,
+    ];
+
+    for (const status of allStatuses) {
+      for (const integrity of allIntegrity) {
+        const r = row(status, integrity);
+        const both = isBookingConfirmable(r) && isBookingCancellable(r);
+        expect(both).toBe(false);
+      }
+    }
   });
 });

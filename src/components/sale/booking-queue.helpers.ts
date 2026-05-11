@@ -55,3 +55,28 @@ export function isBookingConfirmable(
   if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
   return true;
 }
+
+/**
+ * Pure: is a booking eligible for the Cancel action (Commit 2O-b)?
+ *
+ * Eligibility rules (per Boss 2O-b allowed-scope verdict):
+ * - status must be CONFIRMED. PENDING_REVIEW cancel/reject is
+ *   intentionally NOT exposed in 2O-b. CANCELLED/EXPIRED/
+ *   CONVERTED_TO_ORDER are terminal.
+ * - reservationIntegrity must be OK or NOT_APPLICABLE when present.
+ *   MISSING/MULTIPLE rows block — admin must inspect data corruption
+ *   via internal tooling before releasing stock to avoid amplifying
+ *   the integrity error (cancel decrements reservedQty; doing this
+ *   on a row with 0 or ≥2 active reservations risks negative
+ *   reservedQty or only-partially-released stock).
+ * - When the field is undefined (pre-2T API response), allow Cancel
+ *   on CONFIRMED to preserve degraded-but-functional behavior.
+ */
+export function isBookingCancellable(
+  b: BookingConfirmEligibilityInput
+): boolean {
+  if (b.status !== 'CONFIRMED') return false;
+  const integrity = b.reservationIntegrity;
+  if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
+  return true;
+}
