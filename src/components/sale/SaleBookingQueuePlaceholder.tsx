@@ -8,6 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 import { ConfirmBookingDialog } from './ConfirmBookingDialog';
+import {
+  isBookingConfirmable,
+  type SaleReservationIntegrityLabel as HelperReservationIntegrityLabel,
+} from './booking-queue.helpers';
+
+export { isBookingConfirmable } from './booking-queue.helpers';
 
 /**
  * Booking queue — wired to GET /api/sale/bookings (Commit 2S).
@@ -18,11 +24,9 @@ import { ConfirmBookingDialog } from './ConfirmBookingDialog';
  * disabled — admin cannot accidentally trigger an integrity-error
  * mutation. Cancel + Create Order remain disabled in this commit.
  */
-export type SaleReservationIntegrityLabel =
-  | 'OK'
-  | 'MISSING'
-  | 'MULTIPLE'
-  | 'NOT_APPLICABLE';
+// Re-export the integrity label type from the helper module so existing
+// consumers can keep importing it from this file (no breaking change).
+export type SaleReservationIntegrityLabel = HelperReservationIntegrityLabel;
 
 export interface SaleBookingRow {
   readonly bookingId: string;
@@ -75,25 +79,9 @@ export interface SaleBookingQueueProps {
   readonly onMutationSuccess?: () => void;
 }
 
-/**
- * Pure: is a booking eligible for the Confirm action (Commit 2O-a)?
- *
- * Eligibility rules:
- * - status must be PENDING_REVIEW (no re-confirm of CONFIRMED;
- *   /api/sale/bookings/[id]/confirm is idempotent but UI does not
- *   expose the no-op path).
- * - reservationIntegrity must be OK or NOT_APPLICABLE when present.
- *   MISSING / MULTIPLE rows block — admin must inspect data corruption
- *   via internal tooling before any mutation.
- * - When the field is undefined (pre-2T API response), allow Confirm
- *   on PENDING_REVIEW to preserve degraded-but-functional behavior.
- */
-export function isBookingConfirmable(b: SaleBookingRow): boolean {
-  if (b.status !== 'PENDING_REVIEW') return false;
-  const integrity = b.reservationIntegrity;
-  if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
-  return true;
-}
+// `isBookingConfirmable` lives in ./booking-queue.helpers.ts and is
+// re-exported above for backward compatibility. See test coverage in
+// tests/unit/components/sale/booking-queue.helpers.test.ts (20 cases).
 
 const STATUS_BADGE: Record<
   SaleBookingRow['status'],
