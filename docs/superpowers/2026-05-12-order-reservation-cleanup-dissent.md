@@ -1,9 +1,28 @@
 # ORDER-RESERVATION-CLEANUP — design / dissent
 
-**Status:** DESIGN ONLY. No code changes proposed in this commit.
+**Status:** DESIGN + verifier scaffolding shipped. Runtime fix (Commit 1) DEFERRED — local Docker daemon offline at implementation time. See § "Implementation status 2026-05-12" below.
 **Date:** 2026-05-12
 **Author:** Claude Opus 4.7
 **Source:** Pre-existing bug flagged in [2026-05-11-sale-create-order-from-bookings-design.md §4](2026-05-11-sale-create-order-from-bookings-design.md) during Commit 2O-c-DESIGN audit.
+
+## Implementation status 2026-05-12
+
+- ✅ Design doc finalized + Boss approved.
+- ✅ Verifier script shipped at `scripts/verify-order-reservation-cleanup.ts` (5 test cases — single reservation / already-released idempotency / multiple reservations per order / booking-converted reservation / no-reservations order).
+- ✅ npm script `verify:order-reservation-cleanup` registered.
+- ⏸ Runtime fix in `orderRepository.transition` **NOT yet shipped**. Local Docker daemon was offline during the implementation window. Per Boss 2026-05-12 PHASE 4 stop condition ("If Docker daemon unavailable: STOP and report"), the runtime change was reverted and only the verifier scaffolding was committed. When Docker is restored, the runtime fix can be re-applied via the design in §"Commit 1 — `fix(order): release StockReservation on RESERVED transition` (R1)" below and verified via the shipped script.
+
+To restore + verify after Docker comes back:
+```
+docker compose up -d postgres
+DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
+  npx prisma migrate deploy
+CONFIRM_NON_PROD_DB=true \
+  VERIFY_ORDER_RESERVATION_CLEANUP_RUN_ID=order-cleanup-$(date +%Y%m%d-%H%M%S) \
+  DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
+  npm run verify:order-reservation-cleanup
+```
+Expected: 5/5 PASS after the runtime fix lands.
 
 This doc audits the orphan-`StockReservation` problem that surfaces when `Order.status` transitions from `RESERVED` to `CONFIRMED` and answers Boss's 8 scoping questions. Implementation lands in a SEPARATE commit after Boss + ChatGPT review of this design.
 
