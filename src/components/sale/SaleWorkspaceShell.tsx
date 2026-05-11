@@ -65,6 +65,7 @@ type ProductState =
       kind: 'ready';
       liveSessionId: string;
       products: readonly SaleBroadcastProductRow[];
+      filteredInvalidCount?: number;
     };
 
 type BookingState =
@@ -161,6 +162,10 @@ export function SaleWorkspaceShell() {
           kind: 'ready',
           liveSessionId: selectedId,
           products: (body.data?.products ?? []) as SaleBroadcastProductRow[],
+          filteredInvalidCount:
+            typeof body.data?.filteredInvalidCount === 'number'
+              ? body.data.filteredInvalidCount
+              : undefined,
         });
       } catch (err) {
         if (cancelled) return;

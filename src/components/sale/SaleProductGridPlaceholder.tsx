@@ -1,6 +1,6 @@
 'use client';
 
-import { Grid3x3 } from 'lucide-react';
+import { Grid3x3, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
@@ -36,6 +36,13 @@ export interface SaleProductGridProps {
         readonly kind: 'ready';
         readonly liveSessionId: string;
         readonly products: readonly SaleBroadcastProductRow[];
+        /**
+         * Added in Commit 2T API response. Non-zero indicates cross-shop
+         * defense rejected one or more BroadcastProduct rows server-side.
+         * Older API versions return undefined and the warning row is
+         * suppressed.
+         */
+        readonly filteredInvalidCount?: number;
       };
 }
 
@@ -147,6 +154,17 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
         <p className="text-[11px] text-muted-foreground">
           แสดง 12 จาก {state.products.length} ชิ้น — ดูทั้งหมดในเฟสถัดไป
         </p>
+      ) : null}
+      {state.filteredInvalidCount && state.filteredInvalidCount > 0 ? (
+        <div
+          className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+          title="Server-side cross-shop defense rejected one or more BroadcastProduct rows; ask Boss to investigate internal data tooling."
+        >
+          <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+          <span>
+            มีสินค้าบางรายการถูกซ่อนเพราะข้อมูลไม่ถูกต้อง ({state.filteredInvalidCount} รายการ)
+          </span>
+        </div>
       ) : null}
       <Button variant="outline" size="sm" disabled className="w-full">
         จองสินค้า — ยังไม่เปิดใช้งาน

@@ -1,6 +1,7 @@
 'use client';
 
-import { Users } from 'lucide-react';
+import type { ReactElement } from 'react';
+import { Users, AlertTriangle, AlertOctagon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,6 +12,12 @@ import { SalePanelCard } from './SalePanelCard';
  * GET /api/sale/bookings?liveSessionId=...
  * (Commit 2S). Read-only. Confirm/Cancel buttons stay disabled.
  */
+export type SaleReservationIntegrityLabel =
+  | 'OK'
+  | 'MISSING'
+  | 'MULTIPLE'
+  | 'NOT_APPLICABLE';
+
 export interface SaleBookingRow {
   readonly bookingId: string;
   readonly status:
@@ -36,6 +43,10 @@ export interface SaleBookingRow {
   readonly cancelledAt: string | null;
   readonly convertedOrderId: string | null;
   readonly activeReservationId: string | null;
+  /** Added in Commit 2T API response. Older API versions return undefined. */
+  readonly activeReservationCount?: number;
+  /** Added in Commit 2T API response. Older API versions return undefined. */
+  readonly reservationIntegrity?: SaleReservationIntegrityLabel;
   readonly idempotencyKey: string | null;
 }
 
@@ -149,6 +160,7 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
       <div className="space-y-1.5 max-h-72 overflow-y-auto">
         {state.bookings.slice(0, 20).map((b) => {
           const badge = STATUS_BADGE[b.status];
+          const integrityBadge = renderIntegrityBadge(b.reservationIntegrity);
           return (
             <div
               key={b.bookingId}
@@ -165,6 +177,7 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
                 <span className="font-mono text-[10px] text-muted-foreground">
                   RM{b.unitPrice}
                 </span>
+                {integrityBadge}
                 <Badge className={`text-[10px] ${badge.className}`}>{badge.label}</Badge>
               </div>
             </div>
@@ -185,5 +198,51 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
         </Button>
       </div>
     </SalePanelCard>
+  );
+}
+
+/**
+ * Pure: render a small integrity badge next to a booking row when the
+ * GET /api/sale/bookings response flags reservation corruption.
+ *
+ * Boss spec (Commit 2U):
+ * - OK / NOT_APPLICABLE  → no badge (return null)
+ * - MISSING              → amber warning icon + 'INTEGRITY' label
+ * - MULTIPLE             → red warning icon + 'INTEGRITY' label
+ *
+ * Internal IDs are deliberately NOT shown — admin sees only that the
+ * row has an integrity issue. The future Confirm wiring (2O-a) will
+ * disable mutation on MISSING/MULTIPLE rows; for 2U the buttons remain
+ * disabled by default so no row-level gating is required yet.
+ *
+ * Older API responses (pre-2T) may omit `reservationIntegrity`; the
+ * helper returns null in that case so degraded payloads still render.
+ */
+function renderIntegrityBadge(
+  integrity: SaleBookingRow['reservationIntegrity']
+): ReactElement | null {
+  if (!integrity || integrity === 'OK' || integrity === 'NOT_APPLICABLE') {
+    return null;
+  }
+  if (integrity === 'MISSING') {
+    return (
+      <Badge
+        className="gap-0.5 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-100 text-[10px]"
+        title="Reservation MISSING — booking marked CONFIRMED but no active stock reservation"
+      >
+        <AlertTriangle className="size-2.5" aria-hidden />
+        INTEGRITY
+      </Badge>
+    );
+  }
+  // MULTIPLE
+  return (
+    <Badge
+      className="gap-0.5 bg-red-100 text-red-900 hover:bg-red-100 dark:bg-red-900/40 dark:text-red-100 text-[10px]"
+      title="Reservation MULTIPLE — more than one active stock reservation"
+    >
+      <AlertOctagon className="size-2.5" aria-hidden />
+      INTEGRITY
+    </Badge>
   );
 }

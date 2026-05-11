@@ -1,7 +1,19 @@
-# /sale read-only manual smoke checklist
+# /sale read-only manual smoke checklist (living doc)
 
-**Date:** 2026-05-11 (Commit 2T)
-**Scope:** Authenticated browser smoke of the /sale workspace after the read-only API wiring (2P/2Q/2R/2S). Performed by Boss; Claude cannot perform browser login automation against production. Captures what is automated vs what still requires a human session.
+**Status:** LIVING — update in place when /sale read-only surface changes. Do NOT create a new dated checklist per commit. Add a row to the changelog table below instead.
+
+**Scope:** Authenticated browser smoke of the /sale workspace while the page is still read-only. Performed by Boss; Claude cannot perform browser login automation against production. Captures what is automated vs what still requires a human session.
+
+**Drop this doc when:** the first mutation button (Commit 2O-a Confirm) lands. From there, a separate mutation smoke doc takes over.
+
+## Changelog
+
+Most recent on top. Bump when the checklist needs new steps (new field surfaced, new panel, new API response shape).
+
+| Date | Commit | Change |
+|---|---|---|
+| 2026-05-11 | 2U (this commit) | Add integrity-badge visual checks (reservation MISSING/MULTIPLE; filteredInvalidCount panel warning). Doc converted to living format. |
+| 2026-05-11 | 2T `492543c` | Initial doc. Covers 2P/2Q/2R/2S read-only wiring. |
 
 ## Pre-flight
 
@@ -16,7 +28,7 @@
   - 15 tests on GET `/api/sale/live-sessions/[id]/broadcast-products`
   - 19 tests on GET `/api/sale/bookings`
 
-## What is AUTOMATED in 2T
+## What is AUTOMATED (cumulative)
 
 | Concern | Coverage |
 |---|---|
@@ -68,8 +80,12 @@ The following can only be verified by Boss with a real admin login because Claud
    - Try clicking every visible button: "เลือกรอบไลฟ์", "จองสินค้า", "Confirm / ยืนยัน", "Cancel / ยกเลิก", "Create Order / สร้างออเดอร์", "ยังไม่เปิดใช้งาน".
    - Confirm: all buttons are visually disabled and clicks produce no network request and no state change.
 
-6. **Integrity field surfaces (if applicable)**
-   - If your booking data contains a CONFIRMED booking with `activeReservationCount !== 1`, the UI should still render that row. The `reservationIntegrity` field in the JSON response (visible in DevTools Network → Response) should show `MISSING` or `MULTIPLE`. This is a backend integrity hint; UI does not yet surface it visually (future commit).
+6. **Integrity field surfaces visually (Commit 2U)**
+   - Booking Queue panel: any CONFIRMED row whose `reservationIntegrity` is `MISSING` should show an amber `INTEGRITY` badge with a warning-triangle icon next to the status pill. Hover tooltip explains "booking marked CONFIRMED but no active stock reservation". Internal reservation IDs are NOT shown.
+   - Booking Queue panel: any row whose `reservationIntegrity` is `MULTIPLE` should show a red `INTEGRITY` badge with an alert-octagon icon. Hover tooltip explains "more than one active stock reservation".
+   - OK / NOT_APPLICABLE rows: no integrity badge.
+   - Product Codes panel: when `data.filteredInvalidCount > 0`, an amber warning row appears below the grid: "มีสินค้าบางรายการถูกซ่อนเพราะข้อมูลไม่ถูกต้อง (X รายการ)". Cross-shop / corrupt-row identifiers are NOT exposed. Suppressed when count is zero.
+   - Mutation buttons remain disabled regardless of integrity state.
 
 7. **CHAT_SUPPORT role test**
    - Log out, log in as a CHAT_SUPPORT user (if you have one).
