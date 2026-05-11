@@ -1,16 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { Users, AlertTriangle, AlertOctagon } from 'lucide-react';
+import { Users, AlertTriangle, AlertOctagon, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
+import { ConfirmBookingDialog } from './ConfirmBookingDialog';
 
 /**
- * Booking queue — wired to
- * GET /api/sale/bookings?liveSessionId=...
- * (Commit 2S). Read-only. Confirm/Cancel buttons stay disabled.
+ * Booking queue — wired to GET /api/sale/bookings (Commit 2S).
+ *
+ * In Commit 2O-a the Confirm action is enabled for PENDING_REVIEW rows
+ * that have reservationIntegrity OK or NOT_APPLICABLE. MISSING /
+ * MULTIPLE rows show an INTEGRITY badge and the Confirm button stays
+ * disabled — admin cannot accidentally trigger an integrity-error
+ * mutation. Cancel + Create Order remain disabled in this commit.
  */
 export type SaleReservationIntegrityLabel =
   | 'OK'
@@ -60,6 +66,33 @@ export interface SaleBookingQueueProps {
         readonly liveSessionId: string;
         readonly bookings: readonly SaleBookingRow[];
       };
+  /**
+   * Invoked after a successful Confirm mutation so the parent can
+   * trigger a refetch of bookings + product grid (stock counts shift
+   * on confirm via reservedQty++). Caller is expected to bump a
+   * refetch token in state.
+   */
+  readonly onMutationSuccess?: () => void;
+}
+
+/**
+ * Pure: is a booking eligible for the Confirm action (Commit 2O-a)?
+ *
+ * Eligibility rules:
+ * - status must be PENDING_REVIEW (no re-confirm of CONFIRMED;
+ *   /api/sale/bookings/[id]/confirm is idempotent but UI does not
+ *   expose the no-op path).
+ * - reservationIntegrity must be OK or NOT_APPLICABLE when present.
+ *   MISSING / MULTIPLE rows block — admin must inspect data corruption
+ *   via internal tooling before any mutation.
+ * - When the field is undefined (pre-2T API response), allow Confirm
+ *   on PENDING_REVIEW to preserve degraded-but-functional behavior.
+ */
+export function isBookingConfirmable(b: SaleBookingRow): boolean {
+  if (b.status !== 'PENDING_REVIEW') return false;
+  const integrity = b.reservationIntegrity;
+  if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
+  return true;
 }
 
 const STATUS_BADGE: Record<
@@ -91,7 +124,12 @@ const STATUS_BADGE: Record<
   },
 };
 
-export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
+export function SaleBookingQueuePlaceholder({
+  state,
+  onMutationSuccess,
+}: SaleBookingQueueProps) {
+  const [confirmTarget, setConfirmTarget] = useState<SaleBookingRow | null>(null);
+
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
@@ -153,14 +191,15 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
   return (
     <SalePanelCard
       title="Customer Bookings / รายการจอง"
-      subtitle={`${state.bookings.length} รายการ (ใหม่ → เก่า)`}
+      subtitle={`${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm พร้อมใช้`}
       icon={Users}
       variant="live"
     >
-      <div className="space-y-1.5 max-h-72 overflow-y-auto">
+      <div className="space-y-1.5 max-h-80 overflow-y-auto">
         {state.bookings.slice(0, 20).map((b) => {
           const badge = STATUS_BADGE[b.status];
           const integrityBadge = renderIntegrityBadge(b.reservationIntegrity);
+          const confirmable = isBookingConfirmable(b);
           return (
             <div
               key={b.bookingId}
@@ -179,6 +218,17 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
                 </span>
                 {integrityBadge}
                 <Badge className={`text-[10px] ${badge.className}`}>{badge.label}</Badge>
+                {confirmable ? (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-6 gap-1 px-2 text-[10px]"
+                    onClick={() => setConfirmTarget(b)}
+                  >
+                    <CheckCircle2 className="size-3" aria-hidden />
+                    Confirm
+                  </Button>
+                ) : null}
               </div>
             </div>
           );
@@ -191,12 +241,30 @@ export function SaleBookingQueuePlaceholder({ state }: SaleBookingQueueProps) {
       ) : null}
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled className="flex-1">
-          Confirm / ยืนยัน — ยังไม่เปิดใช้งาน
-        </Button>
-        <Button variant="outline" size="sm" disabled className="flex-1">
           Cancel / ยกเลิก — ยังไม่เปิดใช้งาน
         </Button>
+        <Button variant="outline" size="sm" disabled className="flex-1">
+          Bulk Confirm — ปิดเฟสนี้
+        </Button>
       </div>
+
+      {confirmTarget ? (
+        <ConfirmBookingDialog
+          open={confirmTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setConfirmTarget(null);
+          }}
+          bookingId={confirmTarget.bookingId}
+          customerName={confirmTarget.customerName}
+          displayCode={confirmTarget.displayCode}
+          quantity={confirmTarget.quantity}
+          unitPrice={confirmTarget.unitPrice}
+          onSuccess={() => {
+            setConfirmTarget(null);
+            onMutationSuccess?.();
+          }}
+        />
+      ) : null}
     </SalePanelCard>
   );
 }

@@ -93,6 +93,14 @@ export function SaleWorkspaceShell() {
   const [sessionState, setSessionState] = useState<SessionState>({ kind: 'loading' });
   const [productState, setProductState] = useState<ProductState>({ kind: 'no-session' });
   const [bookingState, setBookingState] = useState<BookingState>({ kind: 'no-session' });
+  /**
+   * Increments when a /sale mutation (Confirm in 2O-a; Cancel/Convert
+   * later) returns success. The product + booking effect re-runs on
+   * change, refreshing stock counts and booking lifecycle state. The
+   * sessions list is intentionally NOT refetched per mutation since
+   * confirm/cancel/convert do not affect LiveSession rows.
+   */
+  const [refetchToken, setRefetchToken] = useState(0);
 
   // Fetch live sessions on mount.
   useEffect(() => {
@@ -208,7 +216,7 @@ export function SaleWorkspaceShell() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, refetchToken]);
 
   return (
     <div className="space-y-6">
@@ -227,11 +235,12 @@ export function SaleWorkspaceShell() {
           />
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              ระยะทดสอบ: หน้านี้แสดงข้อมูลจริงแบบอ่านอย่างเดียว ยังไม่ส่งคำสั่งจริง
+              ระยะทดสอบ: เปิดเฉพาะ Confirm รายการเดียว — Cancel / Create Order ยังปิดอยู่
             </p>
             <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
-              Backend APIs are live and this page now reads real data via GET endpoints.
-              All mutation controls (confirm / cancel / convert / create) remain disabled.
+              Confirm wired to POST /api/sale/bookings/[id]/confirm. Cancel + Create Order +
+              Manual Create remain disabled until separate Boss/ChatGPT approval. MISSING /
+              MULTIPLE integrity rows block Confirm automatically.
             </p>
           </div>
         </CardContent>
@@ -245,7 +254,10 @@ export function SaleWorkspaceShell() {
           <SaleProductGridPlaceholder state={productState} />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
-          <SaleBookingQueuePlaceholder state={bookingState} />
+          <SaleBookingQueuePlaceholder
+            state={bookingState}
+            onMutationSuccess={() => setRefetchToken((n) => n + 1)}
+          />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
           <SaleCustomerPanelPlaceholder />
