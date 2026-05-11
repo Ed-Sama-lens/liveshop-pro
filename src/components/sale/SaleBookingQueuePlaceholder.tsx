@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Users, AlertTriangle, AlertOctagon, CheckCircle2, XCircle, ShoppingCart } from 'lucide-react';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -11,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 import { ConfirmBookingDialog } from './ConfirmBookingDialog';
 import { CancelBookingDialog } from './CancelBookingDialog';
+import { CreateOrderDialog } from './CreateOrderDialog';
 import {
   isBookingConfirmable,
   isBookingCancellable,
@@ -140,6 +140,9 @@ export function SaleBookingQueuePlaceholder({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set<string>()
   );
+  // 2O-c2: Create Order dialog open state. Only set true when user
+  // clicks the Create Order button with ≥1 selected row.
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
 
   // SaleBookingRow doesn't carry liveSessionId (it lives once on the
   // parent state shape returned by GET /api/sale/bookings). Augment
@@ -372,15 +375,14 @@ export function SaleBookingQueuePlaceholder({
             className="flex-1 gap-1"
             disabled={selectedIds.size === 0}
             onClick={() => {
-              // 2O-c1 placeholder: announce selection. NO POST.
-              // 2O-c2 will replace this with CreateOrderDialog.
-              toast.message('Create Order — รอ 2O-c2', {
-                description: `เลือกแล้ว ${selectedIds.size} รายการ (customer ${lockContext?.customerId.slice(0, 8) ?? '—'} · session ${lockContext?.liveSessionId.slice(0, 8) ?? '—'}). POST จะเปิดใช้งานใน commit ถัดไป.`,
-              });
+              // 2O-c2: open Create Order dialog. The dialog handles
+              // POST /api/sale/orders/from-bookings + success/error
+              // path + parent refetch via onMutationSuccess.
+              setCreateOrderOpen(true);
             }}
           >
             <ShoppingCart className="size-3.5" aria-hidden />
-            Create Order ({selectedIds.size})
+            สร้างออเดอร์ ({selectedIds.size})
           </Button>
           <Button variant="outline" size="sm" disabled className="flex-1">
             Bulk Confirm — ปิดเฟสนี้
@@ -420,6 +422,31 @@ export function SaleBookingQueuePlaceholder({
           activeReservationId={cancelTarget.activeReservationId}
           onSuccess={() => {
             setCancelTarget(null);
+            onMutationSuccess?.();
+          }}
+        />
+      ) : null}
+
+      {/*
+        Create Order dialog (Commit 2O-c2). Mounted only when admin
+        clicks the Create Order button with ≥1 selection AND we have
+        a valid lock context (which is guaranteed by the button's
+        disabled state — defensive guard anyway). selectedRows is
+        derived inline from selectedIds + state.bookings so the dialog
+        receives full booking data without doing its own lookup.
+      */}
+      {createOrderOpen && lockContext !== null ? (
+        <CreateOrderDialog
+          open={createOrderOpen}
+          onOpenChange={(next) => {
+            if (!next) setCreateOrderOpen(false);
+          }}
+          selectedRows={state.bookings.filter((b) => selectedIds.has(b.bookingId))}
+          customerId={lockContext.customerId}
+          liveSessionId={lockContext.liveSessionId}
+          onSuccess={() => {
+            setCreateOrderOpen(false);
+            clearSelection();
             onMutationSuccess?.();
           }}
         />

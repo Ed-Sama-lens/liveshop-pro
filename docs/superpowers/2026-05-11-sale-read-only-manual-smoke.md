@@ -12,7 +12,8 @@ Most recent on top. Bump when the checklist needs new steps (new field surfaced,
 
 | Date | Commit | Change |
 |---|---|---|
-| 2026-05-11 | 2O-c1 (this commit) | Create Order **selection UI only** — per-row Checkbox on CONFIRMED+integrity-clean rows, customer/session lock, count display, Create Order button enabled when ≥1 selected. Button does NOT POST — fires sonner toast placeholder. Mutation surface UNCHANGED (still 2 POSTs: Confirm + Cancel). |
+| 2026-05-12 | 2O-c2 (this commit) | Create Order **dialog + POST wiring**. POST `/api/sale/orders/from-bookings` fires from `CreateOrderDialog`. Mutation surface = **3** intentional POSTs (Confirm + Cancel + CreateOrder). Route-level vitest 19/19. |
+| 2026-05-11 | 2O-c1 `152a615` | Create Order **selection UI only** — per-row Checkbox on CONFIRMED+integrity-clean rows, customer/session lock, count display, Create Order button enabled when ≥1 selected. Button did NOT POST — fired sonner toast placeholder. Mutation surface unchanged (2 POSTs). |
 | 2026-05-11 | 2O-c-DESIGN `f70c51c` | Design doc only. No code. Answered Q1-Q10 + D1-D5. |
 | 2026-05-11 | 2O-b `defd8a0` | Cancel button enabled (single-row, CONFIRMED + integrity-clean). Required reason 3-200 chars. targetStatus hard-coded CANCELLED. Mutation surface = 2 intentional POSTs (Confirm + Cancel). |
 | 2026-05-11 | RATE_LIMIT_MAX=60 | Boss set Vercel env + redeployed. POST budget per IP raised 20 → 60 per 15-min window. |
@@ -367,14 +368,105 @@ The selection path is considered manually verified when all of:
 - ✅ `ล้างการเลือก` link clears selection + unlocks context.
 - ✅ Mutation grep on sale UI shows EXACTLY 2 POST sites (Confirm + Cancel) — no third POST introduced by 2O-c1.
 
+## Mutation steps — Create Order dialog (added Commit 2O-c2)
+
+Verify with a real OWNER or MANAGER admin session. CHAT_SUPPORT must NOT be able to fire Create Order; route returns 403 server-side regardless of UI state.
+
+**Prep:** select ≥2 CONFIRMED + integrity-clean bookings from the SAME customer + same live session (lock context active). If only 1 row available, single-row conversion also valid.
+
+1. **Create Order button opens modal**
+   - Click `สร้างออเดอร์ (N)` button at bottom of Booking Queue panel.
+   - Modal opens. Title: `สร้างออเดอร์จากรายการจอง`.
+   - Description shows count + warns about CONVERTED_TO_ORDER status flip.
+
+2. **Modal summary matches selected rows**
+   - Identity block shows: ลูกค้า (customer name) / Customer (id prefix 12 chars) / Session (id prefix 12 chars).
+   - Summary table: one row per selected booking with displayCode + product/variant name + qty + unit price + line total.
+   - Scrollable when rows > visible area.
+   - Grand Total row shows `RM{sum}`.
+   - Note block (amber) lists 4 Phase-1 constraints: status flips to CONVERTED_TO_ORDER, NO paid mark, NO customer message, Order created in RESERVED state.
+
+3. **Cancel-in-modal sends no POST**
+   - Click `ยกเลิก` footer button.
+   - Modal closes. Selection state PRESERVED (Create Order strip still shows count). Admin can re-open or refine selection.
+   - DevTools Network: ZERO POST fired.
+
+4. **Submit sends exactly one POST**
+   - Re-open modal. Click `ยืนยันสร้างออเดอร์ (N)` (destructive variant disabled-during-inflight).
+   - DevTools Network: exactly one `POST /api/sale/orders/from-bookings`.
+   - Request payload:
+     ```
+     {
+       "liveSessionId": "<locked session id>",
+       "customerId": "<locked customer id>",
+       "bookingIds": ["...selectedIds in selection order"]
+     }
+     ```
+   - Spinner appears in submit button during inflight.
+
+5. **Success path**
+   - On 200 + `success: true`:
+     - Modal closes automatically.
+     - sonner toast: `สร้างออเดอร์สำเร็จ — Order #ORD-NNNNNN`.
+     - **selectedIds cleared** → Create Order strip count returns to 0.
+     - Booking queue refetches → rows that were converted now show CONVERTED badge (blue, no strikethrough) instead of CONFIRMED. Cancel + Confirm + Select all gone from those rows.
+     - Product Codes panel also refetches (refetch token bumps) — `reservedQty` unchanged (Option A — reservation transferred to order, not released).
+
+6. **Idempotent replay**
+   - If admin double-clicks Create Order within 1s, second request hits server-side idempotency key.
+   - Server returns same Order with `idempotent: true`.
+   - Toast wording switches to `ออเดอร์อยู่แล้ว — Order #ORD-NNNNNN`.
+   - No duplicate Order created.
+
+7. **Error paths — inline rendering**
+   - Modal stays open. Selection preserved.
+
+   | Server case | HTTP | Inline message (Thai) |
+   |---|---|---|
+   | Session expired mid-modal | 401 | `ต้อง sign-in ก่อน` + `เซสชันหมดอายุ ...` |
+   | CHAT_SUPPORT direct API | 403 | `ไม่มีสิทธิ์สร้างออเดอร์` + `(เฉพาะ OWNER/MANAGER)` |
+   | Mid-flight: cross-tab status flip on one of the bookingIds | 409 | `สร้างออเดอร์ไม่ได้` + `booking บางรายการอาจถูกเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลใหม่` |
+   | Validation (empty bookingIds / over 100 / empty session/customer id) — shouldn't happen with UI gates | 400 | `ข้อมูลไม่ถูกต้อง` + `กรุณาตรวจรายการที่เลือก` |
+   | BroadcastProduct lost variantId mid-flight | 422 | `ข้อมูล booking ไม่ครบ` |
+   | Rate limit | 429 | `ส่งคำสั่งถี่เกินไป` + `กรุณารอประมาณ {Retry-After} วินาที...` |
+   | Reservation integrity / unknown server error | 500 | `เซิร์ฟเวอร์มีปัญหา` + `กรุณาแจ้ง admin ...` |
+   | Network failure | — | `การเชื่อมต่อขัดข้อง` + `{err.message}` |
+
+8. **No customer-facing message**
+   - DevTools Network: confirm NO outbound request to Messenger / WhatsApp / Telegram / email APIs after a successful Create Order.
+
+9. **No payment / shipment action**
+   - DevTools Network: no POST to `/api/orders/[id]/payment`, no POST to `/api/orders/[id]/shipment`. Order lands in RESERVED state only.
+
+10. **Other actions unchanged**
+    - Confirm button on PENDING_REVIEW rows still works.
+    - Cancel button on CONFIRMED rows (not in selection) still works.
+    - Manual Create + Bulk actions still disabled.
+
+## Pass criteria (Create Order mutation — 2O-c2)
+
+The Create Order path is considered manually verified when all of:
+
+- ✅ Modal opens with correct selection summary + grand total.
+- ✅ Cancel-in-modal fires zero POST + preserves selection.
+- ✅ Submit fires exactly one `POST /api/sale/orders/from-bookings`.
+- ✅ Successful Create Order closes modal + clears selection + shows toast with Order number + refetches panels.
+- ✅ Converted rows show CONVERTED badge after refetch; selectable/confirmable/cancellable all hidden.
+- ✅ Error paths render inline; modal stays open; selection preserved.
+- ✅ 429 includes parsed `Retry-After` wait time.
+- ✅ Idempotent replay toast distinguishes "already exists" from "newly created".
+- ✅ Confirm + Cancel buttons still work normally.
+- ✅ NO customer-facing message generated.
+- ✅ NO payment/shipment action triggered.
+- ✅ Mutation grep on sale UI shows EXACTLY 3 POST sites (Confirm + Cancel + CreateOrder).
+
 ## After this checklist passes
 
 Boss + ChatGPT decide whether to proceed to:
-- **2O-c2** — `CreateOrderDialog` + POST wiring + route test (introduces 3rd POST). Recommended next step.
 - 2O-d Manual Create modal (requires GET customers + GET products by code)
 - Read-API gap filling (`GET /api/sale/customers/[id]`, session aggregates)
 - Pre-existing `ORDER-RESERVATION-CLEANUP` (separate dissent — flagged in 2O-c-DESIGN §4)
-- TEST-CLEANUP (per-route vitest expansion already partly addressed by 2T)
+- TEST-CLEANUP (per-route vitest expansion now partly addressed by 2T + 2O-c2)
 
 ## Refs
 

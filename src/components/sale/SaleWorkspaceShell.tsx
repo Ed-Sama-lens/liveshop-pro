@@ -235,12 +235,13 @@ export function SaleWorkspaceShell() {
           />
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              ระยะทดสอบ: เปิดเฉพาะ Confirm รายการเดียว — Cancel / Create Order ยังปิดอยู่
+              ระยะทดสอบ: Confirm + Cancel + Create Order ใช้งานแล้ว — Manual Create ยังปิดอยู่
             </p>
             <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
-              Confirm wired to POST /api/sale/bookings/[id]/confirm. Cancel + Create Order +
-              Manual Create remain disabled until separate Boss/ChatGPT approval. MISSING /
-              MULTIPLE integrity rows block Confirm automatically.
+              3 mutations wired: Confirm + Cancel (per-row, modal) + Create Order
+              (multi-select, modal). MISSING/MULTIPLE integrity rows block all 3 mutations.
+              Manual Create modal + Bulk actions remain disabled until separate
+              Boss/ChatGPT approval. No customer-facing message sent.
             </p>
           </div>
         </CardContent>
