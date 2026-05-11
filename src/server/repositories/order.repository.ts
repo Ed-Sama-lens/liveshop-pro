@@ -383,6 +383,45 @@ export const orderRepository = Object.freeze({
             },
           });
         }
+
+        // ORDER-RESERVATION-CLEANUP Commit 1 — mark associated
+        // StockReservation rows released. Stock is now SOLD (quantity
+        // decremented), so the reservation is no longer active.
+        //
+        // Lifecycle context:
+        // - Storefront checkout creates StockReservation(orderId, expiresAt: now+24h)
+        //   and increments reservedQty at order creation time.
+        // - Sale conversion (bookingRepository.convertToOrder) UPDATES an
+        //   existing StockReservation to gain orderId while retaining
+        //   bookingId. reservedQty was already incremented at Booking
+        //   confirm time and is NOT touched at conversion.
+        // - Both paths land here at RESERVED → CONFIRMED with
+        //   StockReservation rows where releasedAt: null and orderId set.
+        //
+        // Before this fix: rows orphaned with releasedAt: null forever,
+        // overcounting "open reservations" in any dashboard query that
+        // filtered by releasedAt IS NULL. expireReservations() cron
+        // would also silently double-decrement reservedQty on these
+        // orphan rows after their 24h expiresAt window (storefront
+        // path only; sale conversion uses NO_EXPIRY_SENTINEL).
+        //
+        // After this fix: every transition out of RESERVED → CONFIRMED
+        // marks the rows released atomically with the stock decrement.
+        //
+        // Idempotency: `where: { releasedAt: null }` skips already-
+        // released rows (e.g. defensive backfill scenarios).
+        // reservedQty is NOT decremented here (already done in the loop
+        // above) — this update only changes the audit-anchor field.
+        //
+        // bookingId on sale-conversion rows is preserved (not in `data`).
+        //
+        // CANCELLED transition has the same bug pattern but is OUT OF
+        // SCOPE per Boss 2026-05-12 PHASE 2 verdict — narrow to CONFIRMED
+        // only for this commit.
+        await tx.stockReservation.updateMany({
+          where: { orderId: id, releasedAt: null },
+          data: { releasedAt: new Date() },
+        });
       }
 
       // Update order status with timestamp
