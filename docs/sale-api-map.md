@@ -14,7 +14,7 @@ Reference for every route under `/api/sale/*` and the /sale admin page. Updated 
 | POST | `/api/sale/bookings/[bookingId]/cancel` | Cancel/expire booking + release stock. | OWNER / MANAGER | shared IP bucket |
 | POST | `/api/sale/orders/from-bookings` | Convert CONFIRMED bookings into one Order(RESERVED). | OWNER / MANAGER | shared IP bucket |
 
-Rate limit: 20 points / 900_000 ms per source IP (`withRateLimit` from [src/lib/validation/middleware.ts](../src/lib/validation/middleware.ts)). All 4 mutation routes share one in-process bucket. GET routes are intentionally not rate-limited. Env overrides: `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`.
+Rate limit: shared in-process bucket per source IP via `withRateLimit` from [src/lib/validation/middleware.ts](../src/lib/validation/middleware.ts). Default 20 points / 900_000 ms; Vercel Production env `RATE_LIMIT_MAX=60` is **active** (Boss 2026-05-11). All 4 POST mutation routes share one bucket. GET routes intentionally not rate-limited. Env overrides: `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`.
 
 ## RBAC matrix
 
@@ -80,13 +80,13 @@ Validation errors include `fields: { fieldPath: ["msg"] }`. Status codes:
 | 429 | Rate limit exceeded (POST only). Includes `Retry-After` header. |
 | 500 | RESERVATION_INTEGRITY_ERROR / unknown |
 
-## /sale page (Commit 2L-a → 2L-b → 2S)
+## /sale page (Commit 2L-a → 2L-b → 2S → 2O-a/b/c2 → Customer Panel → Manual Create)
 
 File: [src/app/(app)/sale/page.tsx](../src/app/(app)/sale/page.tsx) renders [SaleWorkspaceShell](../src/components/sale/SaleWorkspaceShell.tsx) (`'use client'`).
 
-Six panels, each wrapped in `ErrorBoundarySection`:
+Six panels (each wrapped in `ErrorBoundarySection`) + four dialog surfaces:
 
-| Panel | Source | Wired in |
+| Panel / Surface | Source | Wired in |
 |---|---|---|
 | Live Sessions / รอบไลฟ์ | GET /api/sale/live-sessions | 2S |
 | Product Codes / รหัสสินค้า | GET /api/sale/live-sessions/[id]/broadcast-products | 2S |
@@ -96,10 +96,25 @@ Six panels, each wrapped in `ErrorBoundarySection`:
 | Booking row Select + Create Order | POST /api/sale/orders/from-bookings | 2O-c2 |
 | Manual Create dialog (customer search) | GET /api/customers?search= (existing admin route reused) | Manual Create Phase 3 (2026-05-13) |
 | Manual Create dialog (submit) | POST /api/sale/bookings | Manual Create Phase 4 (2026-05-13) |
-| Customer Panel / ข้อมูลลูกค้า | GET /api/customers/[id] (existing admin route reused) | Phase 4 (2026-05-12) |
-| Inbox (Coming Soon) | static | future phase |
+| Customer Panel / ข้อมูลลูกค้า | GET /api/customers/[id] (existing admin route reused) | Customer Panel (2026-05-12) |
+| Inbox (Coming Soon) | static | future phase — see omnichannel discovery doc 2026-05-13 |
 
-Auto-selection picks LIVE → SCHEDULED → first. No interactive selector yet. All action buttons are `<Button disabled>` per the strict no-mutation contract.
+Auto-selection picks LIVE → SCHEDULED → first. No interactive selector yet. Mutation surface count: **4 intentional POSTs** (Confirm + Cancel + CreateOrder + ManualCreate). All other action buttons remain `<Button disabled>` until explicit Boss approval.
+
+### Mutation grep contract
+
+```bash
+grep -R "method: 'POST'\|method: \"POST\"\|axios\|useMutation" \
+  src/components/sale src/app/\(app\)/sale
+```
+
+Must return exactly 4 hits, all confined to:
+- `src/components/sale/ConfirmBookingDialog.tsx`
+- `src/components/sale/CancelBookingDialog.tsx`
+- `src/components/sale/CreateOrderDialog.tsx`
+- `src/components/sale/ManualCreateBookingDialog.tsx`
+
+Any additional hit is a regression — investigate before merge.
 
 ## Money formatting
 
@@ -126,20 +141,32 @@ CONFIRM_NON_PROD_DB=true \
   VERIFY_BOOKING_CREATE_RUN_ID=$(date +%Y%m%d-%H%M%S) \
   DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
   npx tsx scripts/verify-booking-create.ts        # 13/13
+
+CONFIRM_NON_PROD_DB=true \
+  DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
+  npx tsx scripts/verify-order-reservation-cleanup.ts  # 5/5
+
+CONFIRM_NON_PROD_DB=true \
+  DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
+  npx tsx scripts/verify-expire-reservations-cron.ts   # 1/1
 ```
+
+Total Docker E2E coverage: **36/36** across 5 verifiers (9 + 8 + 13 + 5 + 1).
 
 Production database is OFF-LIMITS for these scripts — guard refuses to run unless `CONFIRM_NON_PROD_DB=true` and host is local.
 
 ## Production smoke probes
 
 ```bash
-# Baseline
+# Baseline (6/6)
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/                              # 307
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/favicon.ico                   # 200
 curl -sS -o /dev/null -w "%{http_code}\n" -L https://nazhahatyai.com/ -H "Cookie: NEXT_LOCALE=th"  # 200
 curl -sS -o /dev/null -w "%{http_code}\n" -L https://nazhahatyai.com/ -H "Cookie: NEXT_LOCALE=zh"  # 200
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/login                         # 307
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/admin                         # 307
+
+# /sale gate
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/sale                          # 307
 
 # Sale API auth gates (GET — not rate-limited)
@@ -147,17 +174,28 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/live-
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/live-sessions/dummy/broadcast-products         # 401
 curl -sS -o /dev/null -w "%{http_code}\n" 'https://nazhahatyai.com/api/sale/bookings?liveSessionId=dummy'                 # 401
 
-# POST mutation auth gates (rate-limited — probe SPARINGLY)
-curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/bookings -H "Content-Type: application/json" -d '{}'   # 401 within budget, else 429
+# POST mutation auth gates (rate-limited — probe SPARINGLY, one shot each)
+curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/bookings                       -H "Content-Type: application/json" -d '{}'   # 401 within budget
+curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/bookings/dummy/confirm         -H "Content-Type: application/json" -d '{}'   # 401 within budget
+curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/bookings/dummy/cancel          -H "Content-Type: application/json" -d '{"targetStatus":"CANCELLED"}'   # 401 within budget
+curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/orders/from-bookings           -H "Content-Type: application/json" -d '{}'   # 401 within budget
 ```
 
-Never call authenticated POSTs against production.
+Total probe count = **13/13** when all pass: 6 baseline + 1 /sale + 3 sale GET + 3+1 POST.
+
+Never call authenticated POSTs against production. Boss runs the [authenticated manual test checklist](superpowers/2026-05-12-sale-authenticated-manual-test-checklist.md) for production write-side validation.
 
 ## Refs
 
-- Manual smoke (read-only UI): [docs/superpowers/2026-05-11-sale-read-only-manual-smoke.md](superpowers/2026-05-11-sale-read-only-manual-smoke.md)
+- Living manual smoke (incl. Manual Create section): [docs/superpowers/2026-05-11-sale-read-only-manual-smoke.md](superpowers/2026-05-11-sale-read-only-manual-smoke.md)
+- Authenticated manual test checklist: [docs/superpowers/2026-05-12-sale-authenticated-manual-test-checklist.md](superpowers/2026-05-12-sale-authenticated-manual-test-checklist.md)
 - Boss decision doc: [docs/superpowers/2026-04-06-sale-mvp-dissent.md](superpowers/2026-04-06-sale-mvp-dissent.md)
 - Runtime design: [docs/superpowers/2026-05-09-sale-booking-runtime-design.md](superpowers/2026-05-09-sale-booking-runtime-design.md)
 - Conversion design: [docs/superpowers/2026-05-09-booking-to-order-conversion-dissent.md](superpowers/2026-05-09-booking-to-order-conversion-dissent.md)
-- Manual create dissent: [docs/superpowers/2026-05-09-manual-booking-create-dissent.md](superpowers/2026-05-09-manual-booking-create-dissent.md)
+- Manual create dissent (Phase 2N route): [docs/superpowers/2026-05-09-manual-booking-create-dissent.md](superpowers/2026-05-09-manual-booking-create-dissent.md)
+- Manual create design (UI): [docs/superpowers/2026-05-12-sale-manual-create-booking-design.md](superpowers/2026-05-12-sale-manual-create-booking-design.md)
+- Manual create Phase 1 audit: [docs/superpowers/2026-05-13-sale-manual-create-booking-readiness.md](superpowers/2026-05-13-sale-manual-create-booking-readiness.md)
+- Customer Panel design: [docs/superpowers/2026-05-12-sale-customer-panel-design.md](superpowers/2026-05-12-sale-customer-panel-design.md)
+- Order reservation cleanup design: [docs/superpowers/2026-05-12-order-reservation-cleanup-dissent.md](superpowers/2026-05-12-order-reservation-cleanup-dissent.md)
+- Omnichannel inbox discovery (future runtime): [docs/superpowers/2026-05-13-omnichannel-live-commerce-inbox-discovery.md](superpowers/2026-05-13-omnichannel-live-commerce-inbox-discovery.md)
 - Handoff index: [docs/superpowers/handoffs/README.md](superpowers/handoffs/README.md)
