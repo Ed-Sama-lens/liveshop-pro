@@ -1,6 +1,6 @@
 # /sale API map
 
-Reference for every route under `/api/sale/*` and the /sale admin page. Updated 2026-05-11 after Commit 2S (UI wiring to read-only APIs).
+Reference for every route under `/api/sale/*` and the /sale admin page. Updated 2026-05-13 after Manual Create UI ships (POST `/api/sale/bookings` now reachable from `/sale` workspace via ManualCreateBookingDialog).
 
 ## Routes
 
@@ -94,6 +94,8 @@ Six panels, each wrapped in `ErrorBoundarySection`:
 | Booking row Confirm action | POST /api/sale/bookings/[id]/confirm | 2O-a |
 | Booking row Cancel action | POST /api/sale/bookings/[id]/cancel | 2O-b |
 | Booking row Select + Create Order | POST /api/sale/orders/from-bookings | 2O-c2 |
+| Manual Create dialog (customer search) | GET /api/customers?search= (existing admin route reused) | Manual Create Phase 3 (2026-05-13) |
+| Manual Create dialog (submit) | POST /api/sale/bookings | Manual Create Phase 4 (2026-05-13) |
 | Customer Panel / ข้อมูลลูกค้า | GET /api/customers/[id] (existing admin route reused) | Phase 4 (2026-05-12) |
 | Inbox (Coming Soon) | static | future phase |
 

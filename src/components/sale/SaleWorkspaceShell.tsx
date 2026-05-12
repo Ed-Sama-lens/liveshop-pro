@@ -244,13 +244,13 @@ export function SaleWorkspaceShell() {
           />
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              ระยะทดสอบ: Confirm + Cancel + Create Order ใช้งานแล้ว — Manual Create เปิด preview (Phase 3)
+              ระยะทดสอบ: 4 mutations พร้อมใช้ — Confirm + Cancel + Create Order + Manual Create
             </p>
             <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
-              3 mutations wired: Confirm + Cancel (per-row, modal) + Create Order
-              (multi-select, modal). MISSING/MULTIPLE integrity rows block all 3 mutations.
-              Manual Create modal เปิด preview ได้แต่ submit ยังปิดอยู่ (Phase 4 จะเปิด).
-              Bulk Confirm ยังปิด. No customer-facing message sent.
+              Manual Create สร้าง booking ใหม่เป็น PENDING_REVIEW (ไม่ตัดสต็อก) แล้วค่อย Confirm.
+              MISSING/MULTIPLE integrity rows block Confirm/Cancel/Create Order.
+              Bulk Confirm ยังปิด. No customer-facing message sent. ใช้ test data เท่านั้นจนกว่า Boss
+              จะอนุมัติ smoke production.
             </p>
           </div>
         </CardContent>

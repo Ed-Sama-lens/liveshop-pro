@@ -442,7 +442,7 @@ export function SaleBookingQueuePlaceholder({
           onClick={() => setManualCreateOpen(true)}
         >
           <Plus className="size-3.5" aria-hidden />
-          สร้าง booking เอง (Manual Create — Phase 3 preview)
+          สร้าง booking เอง (Manual Create — PENDING_REVIEW)
         </Button>
       </div>
 

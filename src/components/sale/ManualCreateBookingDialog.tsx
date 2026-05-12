@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Loader2, Plus, Search, X, AlertTriangle, Ban } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -20,31 +21,45 @@ import type { SaleBroadcastProductRow } from './SaleProductGridPlaceholder';
 /**
  * Manual Create booking modal — fourth /sale mutation surface.
  *
- * Phase 3 skeleton (2026-05-13): UI scaffold only. NO POST wired.
- * Submit button stays disabled with copy "จะเปิดใช้งานในขั้นถัดไป
- * (Phase 4)" so admin can preview the form flow before mutation
- * activation.
+ * Phase 4 (2026-05-13): POST wired against existing route
+ * POST /api/sale/bookings (Commit 2N route, shipped + tested via
+ * verify-booking-create.ts 13/13 Docker E2E). Submit fires once per
+ * click with idempotencyKey from crypto.randomUUID() generated at
+ * dialog open. Status locked to PENDING_REVIEW per Phase 4 plan in
+ * docs/superpowers/2026-05-13-sale-manual-create-booking-readiness.md
+ * — admin confirms via the existing Confirm button on the resulting
+ * row, keeping the two-step flow safer for first manual run.
  *
- * Wiring deferred to Phase 4 per:
- * - docs/superpowers/2026-05-13-sale-manual-create-booking-readiness.md
+ * Mutation surface delta: 3 → 4 POSTs (Confirm + Cancel + CreateOrder +
+ * ManualCreate). All POSTs confined to this module.
  *
- * Scope (Phase 3):
+ * Scope:
  * - Customer search reuses existing `/api/customers?search=` route.
  *   Read-only, shop-scoped, supports OR(name, phone, email)
  *   case-insensitive contains. Pagination defaults limit=20.
  * - Broadcast product picker filters the parent-supplied product
  *   array client-side by displayCode prefix. No new fetch.
  * - Status locked to PENDING_REVIEW. CONFIRMED status NOT exposed
- *   in Phase 3 (defer to later commit per audit M4).
+ *   yet (defer to later commit per audit M4).
  * - Banned customers: rendered + disabled (audit M2).
  * - Out-of-stock variants: rendered + flagged but selectable (audit M2)
  *   — server-side stock check fires only on status=CONFIRMED, and we
  *   lock to PENDING_REVIEW here.
- * - idempotencyKey auto-generated in Phase 4 — Phase 3 form does
- *   not need it (no POST).
+ * - idempotencyKey: crypto.randomUUID() (UUID v4, 36 chars; matches
+ *   server regex `^[A-Za-z0-9_-]{8,128}$`). Generated on dialog open
+ *   and re-generated on reset. Prevents double-click duplicate.
  * - No customer-facing message. No platform integration.
  *
- * Mutation grep impact this commit: ZERO new POSTs. Search fetch is GET.
+ * Error mapping (8 cases — mirrors Confirm/Cancel/CreateOrder pattern):
+ *   401 → "ต้อง sign-in ก่อน"
+ *   403 → "ไม่มีสิทธิ์สร้าง booking"
+ *   400 → "ข้อมูลไม่ถูกต้อง"
+ *   404 → "ลูกค้าหรือสินค้าไม่พบ"
+ *   409 → "สร้างไม่ได้ — กรุณาตรวจข้อมูล"
+ *   422 → "BroadcastProduct ไม่มี variant"
+ *   429 → "ส่งคำสั่งถี่เกินไป กรุณารอ ~{N} วินาที"
+ *   500 → "เซิร์ฟเวอร์มีปัญหา"
+ *   other → server message or generic fallback
  */
 export interface ManualCreateBookingDialogProps {
   readonly open: boolean;
@@ -86,6 +101,86 @@ interface CustomerSearchResponseBody {
     isBanned?: boolean;
     _count?: { orders?: number };
   }>;
+}
+
+interface InlineError {
+  readonly title: string;
+  readonly detail: string;
+}
+
+function mapErrorByStatus(
+  status: number,
+  body: { error?: string } | null,
+  retryAfter: string | null
+): InlineError {
+  if (status === 401) {
+    return {
+      title: 'ต้อง sign-in ก่อน',
+      detail: body?.error ?? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+    };
+  }
+  if (status === 403) {
+    return {
+      title: 'ไม่มีสิทธิ์สร้าง booking',
+      detail: body?.error ?? 'บัญชีนี้ห้ามสร้าง booking (เฉพาะ OWNER/MANAGER)',
+    };
+  }
+  if (status === 400) {
+    return {
+      title: 'ข้อมูลไม่ถูกต้อง',
+      detail: body?.error ?? 'กรุณาตรวจรายการที่กรอก',
+    };
+  }
+  if (status === 404) {
+    return {
+      title: 'ลูกค้าหรือสินค้าไม่พบ',
+      detail: body?.error ?? 'ลูกค้าหรือสินค้าอาจถูกลบหรือเปลี่ยนสถานะแล้ว',
+    };
+  }
+  if (status === 409) {
+    return {
+      title: 'สร้างไม่ได้',
+      detail:
+        body?.error ??
+        'ตรวจสอบสถานะลูกค้า (ถูก ban?) หรือสต็อก หรือ idempotency key',
+    };
+  }
+  if (status === 422) {
+    return {
+      title: 'ข้อมูล booking ไม่ครบ',
+      detail: body?.error ?? 'BroadcastProduct ไม่มี variant',
+    };
+  }
+  if (status === 429) {
+    const seconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
+    const wait =
+      Number.isFinite(seconds) && seconds > 0
+        ? `ประมาณ ${seconds} วินาที`
+        : 'สักครู่';
+    return {
+      title: 'ส่งคำสั่งถี่เกินไป',
+      detail: `กรุณารอ${wait}แล้วลองใหม่อีกครั้ง`,
+    };
+  }
+  if (status === 500) {
+    return {
+      title: 'เซิร์ฟเวอร์มีปัญหา',
+      detail: body?.error ?? 'กรุณาแจ้ง admin ตรวจสอบข้อมูล booking',
+    };
+  }
+  return {
+    title: 'สร้าง booking ไม่สำเร็จ',
+    detail: body?.error ?? `HTTP ${status}`,
+  };
+}
+
+/**
+ * Pure: generate a fresh idempotency key. Matches server regex
+ * `^[A-Za-z0-9_-]{8,128}$` (UUID v4 hex+dashes, 36 chars).
+ * Wrapped so tests can mock + so the call site stays declarative.
+ */
+function makeIdempotencyKey(): string {
+  return crypto.randomUUID();
 }
 
 /**
@@ -140,6 +235,7 @@ export function ManualCreateBookingDialog({
   onOpenChange,
   liveSessionId,
   products,
+  onSuccess,
 }: ManualCreateBookingDialogProps) {
   const [customerSearchInput, setCustomerSearchInput] = useState('');
   const [customerSearchState, setCustomerSearchState] =
@@ -150,6 +246,15 @@ export function ManualCreateBookingDialog({
   const [selectedProduct, setSelectedProduct] =
     useState<SaleBroadcastProductRow | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [inlineError, setInlineError] = useState<InlineError | null>(null);
+  // idempotencyKey generated lazily on first mount + on reset. The same
+  // key is reused for retries within a single open session so a 429-then-
+  // success retry doesn't create a duplicate booking. Regenerated when
+  // the dialog closes + reopens via resetForm().
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
+    makeIdempotencyKey()
+  );
 
   // Stable ids for accessibility (label/input wiring).
   const customerSearchId = useId();
@@ -222,7 +327,9 @@ export function ManualCreateBookingDialog({
     };
   }, [customerSearchInput, selectedCustomer]);
 
-  // Reset all state on close so reopening starts fresh.
+  // Reset all state on close so reopening starts fresh. Generates a
+  // new idempotency key — a fresh open is intentionally a fresh
+  // creation attempt.
   function resetForm() {
     setCustomerSearchInput('');
     setCustomerSearchState({ kind: 'idle' });
@@ -230,11 +337,82 @@ export function ManualCreateBookingDialog({
     setProductCodeInput('');
     setSelectedProduct(null);
     setQuantity(1);
+    setInlineError(null);
+    setIdempotencyKey(makeIdempotencyKey());
   }
 
   function handleOpenChange(next: boolean) {
+    if (isSubmitting) return; // block close mid-request
     if (!next) resetForm();
     onOpenChange(next);
+  }
+
+  async function handleSubmit() {
+    if (
+      !selectedCustomer ||
+      !selectedProduct ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 999
+    ) {
+      return;
+    }
+    setInlineError(null);
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/sale/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          liveSessionId,
+          customerId: selectedCustomer.id,
+          broadcastProductId: selectedProduct.broadcastProductId,
+          quantity,
+          status: 'PENDING_REVIEW' as const,
+          idempotencyKey,
+        }),
+      });
+
+      const retryAfter = res.headers.get('Retry-After');
+      type CreateBookingResponseBody = {
+        success?: boolean;
+        error?: string;
+        data?: {
+          bookingId?: string;
+          status?: string;
+          idempotent?: boolean;
+        };
+      };
+      let body: CreateBookingResponseBody | null = null;
+      try {
+        body = (await res.json()) as CreateBookingResponseBody;
+      } catch {
+        body = null;
+      }
+
+      if (!res.ok || body?.success !== true) {
+        setInlineError(mapErrorByStatus(res.status, body, retryAfter));
+        return;
+      }
+
+      const idempotent = body?.data?.idempotent === true;
+      const verb = idempotent
+        ? 'booking มีอยู่แล้ว'
+        : 'สร้าง booking สำเร็จ';
+      const code = selectedProduct.displayCode;
+      const name = selectedCustomer.name;
+      toast.success(`${verb} — ${name} × ${code} × ${quantity}`);
+      onOpenChange(false);
+      onSuccess?.();
+    } catch (err) {
+      setInlineError({
+        title: 'การเชื่อมต่อขัดข้อง',
+        detail: err instanceof Error ? err.message : 'Network error',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const visibleProducts = useMemo(
@@ -424,22 +602,58 @@ export function ManualCreateBookingDialog({
           </p>
         )}
 
-        {/* ── Phase 3 skeleton notice ── */}
+        {/* ── Activation notice ── */}
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-          <p className="font-medium">Phase 3 — preview ก่อนเปิดใช้งาน</p>
-          <p className="mt-1 text-[11px]">
-            ฟอร์มนี้ยังไม่ส่งคำขอ. Phase 4 จะเปิด submit + ส่ง POST
-            /api/sale/bookings พร้อม error mapping เต็มรูปแบบ.
-          </p>
+          <p className="font-medium">หมายเหตุ</p>
+          <ul className="mt-1 list-disc pl-4 space-y-0.5 text-[11px]">
+            <li>booking ถูกสร้างเป็น <code>PENDING_REVIEW</code> — ยังไม่ตัดสต็อก.</li>
+            <li>กด Confirm ที่แถวจองเพื่อจองสต็อก (reservedQty +N).</li>
+            <li>ห้ามใช้สร้าง booking ของลูกค้าจริงจนกว่า Boss จะอนุมัติ smoke test.</li>
+          </ul>
         </div>
 
+        {inlineError ? (
+          <div
+            className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-950/40"
+            role="alert"
+          >
+            <p className="font-medium text-red-900 dark:text-red-100">
+              {inlineError.title}
+            </p>
+            <p className="mt-1 text-xs text-red-800 dark:text-red-200">
+              {inlineError.detail}
+            </p>
+          </div>
+        ) : null}
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => handleOpenChange(false)}
+            disabled={isSubmitting}
+          >
             ยกเลิก
           </Button>
-          <Button disabled title="จะเปิดใช้งานในขั้นถัดไป (Phase 4)">
-            <Loader2 className="size-4 opacity-0" aria-hidden />
-            จะเปิดใช้งานในขั้นถัดไป
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || !canPreviewSummary}
+            title={
+              !canPreviewSummary
+                ? 'กรอกลูกค้า + สินค้า + จำนวนให้ครบก่อน'
+                : undefined
+            }
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                กำลังสร้าง…
+              </>
+            ) : (
+              <>
+                <Plus className="size-4" aria-hidden />
+                สร้าง booking (PENDING_REVIEW)
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -661,8 +875,3 @@ function SelectedProductCard({
   );
 }
 
-// Keep an icon import warm so future Phase 4 wiring already has the
-// Plus icon available without a follow-up edit.
-export const _ManualCreateDialogIcons = Object.freeze({
-  Plus,
-});
