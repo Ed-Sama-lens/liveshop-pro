@@ -101,6 +101,15 @@ export function SaleWorkspaceShell() {
    * confirm/cancel/convert do not affect LiveSession rows.
    */
   const [refetchToken, setRefetchToken] = useState(0);
+  /**
+   * Selected customer context for the Customer Panel (Phase 4 of
+   * 2026-05-12 10-hour plan). Set by Booking Queue row-click handler.
+   * Customer Panel fetches the full record from GET /api/customers/[id].
+   * `selectedCustomerNameHint` lets the panel show an instant label
+   * while the fetch is in flight.
+   */
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedCustomerNameHint, setSelectedCustomerNameHint] = useState<string | null>(null);
 
   // Fetch live sessions on mount.
   useEffect(() => {
@@ -258,10 +267,17 @@ export function SaleWorkspaceShell() {
           <SaleBookingQueuePlaceholder
             state={bookingState}
             onMutationSuccess={() => setRefetchToken((n) => n + 1)}
+            onCustomerSelected={(customerId, customerNameHint) => {
+              setSelectedCustomerId(customerId);
+              setSelectedCustomerNameHint(customerNameHint);
+            }}
           />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
-          <SaleCustomerPanelPlaceholder />
+          <SaleCustomerPanelPlaceholder
+            selectedCustomerId={selectedCustomerId}
+            customerNameHint={selectedCustomerNameHint}
+          />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
           <SaleOrderConversionPlaceholder />

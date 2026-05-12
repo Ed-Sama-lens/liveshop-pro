@@ -12,7 +12,10 @@ Most recent on top. Bump when the checklist needs new steps (new field surfaced,
 
 | Date | Commit | Change |
 |---|---|---|
-| 2026-05-12 | 2O-c2 (this commit) | Create Order **dialog + POST wiring**. POST `/api/sale/orders/from-bookings` fires from `CreateOrderDialog`. Mutation surface = **3** intentional POSTs (Confirm + Cancel + CreateOrder). Route-level vitest 19/19. |
+| 2026-05-12 | Customer Panel wiring (this commit) | Customer Panel reads live from `GET /api/customers/[id]`. Booking row customer name is now click-target. Mutation surface unchanged (still 3 POSTs). |
+| 2026-05-12 | cron resilience `9211ef3` | `expireReservations()` Promise.allSettled + logger. ORDER-RESERVATION-CLEANUP Commit 3. |
+| 2026-05-12 | order reservation cleanup `520410d` | `orderRepository.transition('CONFIRMED')` marks `StockReservation.releasedAt`. ORDER-RESERVATION-CLEANUP Commit 1. |
+| 2026-05-12 | 2O-c2 `7a6a8b1` | Create Order **dialog + POST wiring**. POST `/api/sale/orders/from-bookings` fires from `CreateOrderDialog`. Mutation surface = **3** intentional POSTs (Confirm + Cancel + CreateOrder). Route-level vitest 19/19. |
 | 2026-05-11 | 2O-c1 `152a615` | Create Order **selection UI only** — per-row Checkbox on CONFIRMED+integrity-clean rows, customer/session lock, count display, Create Order button enabled when ≥1 selected. Button did NOT POST — fired sonner toast placeholder. Mutation surface unchanged (2 POSTs). |
 | 2026-05-11 | 2O-c-DESIGN `f70c51c` | Design doc only. No code. Answered Q1-Q10 + D1-D5. |
 | 2026-05-11 | 2O-b `defd8a0` | Cancel button enabled (single-row, CONFIRMED + integrity-clean). Required reason 3-200 chars. targetStatus hard-coded CANCELLED. Mutation surface = 2 intentional POSTs (Confirm + Cancel). |
@@ -460,13 +463,55 @@ The Create Order path is considered manually verified when all of:
 - ✅ NO payment/shipment action triggered.
 - ✅ Mutation grep on sale UI shows EXACTLY 3 POST sites (Confirm + Cancel + CreateOrder).
 
+## Customer Panel — live data (added 2026-05-12)
+
+The Customer Panel now reads from `GET /api/customers/[id]`. No new sale-namespaced API; reuses the existing admin route. Selection comes from clicking the customer name link in a Booking Queue row.
+
+1. **Empty initial state**
+   - On `/sale` load, Customer Panel shows: "ยังไม่ได้เลือก — คลิกชื่อลูกค้าในแถวรายการจอง". Placeholder variant pill.
+
+2. **Click selects customer**
+   - In Booking Queue, customer name is rendered as a `<button>` with underline-on-hover. Title tooltip "คลิกเพื่อดูข้อมูลลูกค้า".
+   - Click does NOT toggle the checkbox or trigger Confirm/Cancel.
+   - Customer Panel switches to loading state with subtitle "กำลังโหลด: {hint}" using the row's customer name for instant context.
+
+3. **Loaded state**
+   - Customer Panel renders: name, phone (mono), email, ACTIVE/BANNED badge, bannedReason if banned, Shipping type, Order count, Lifetime value (RM).
+   - Edit button stays `<Button disabled>` (no mutation in this phase).
+   - Footer note: "Address / labels / notes — ดูใน /customers" directs admin to /customers page for richer data.
+
+4. **DevTools Network probe**
+   - Click flow fires exactly one `GET /api/customers/{id}`. No POST. No PUT. No DELETE.
+
+5. **Cross-shop safety**
+   - Cross-shop customer id (manipulated URL/cookie scenario) → server returns 404 → Customer Panel shows error message.
+
+6. **PII guardrails**
+   - Address fields (street/district/province/postalCode), labels, notes, raw FB identifiers NOT shown.
+   - Email shown only when present.
+   - bannedReason shown only when isBanned=true.
+
+7. **Cancel button gating unchanged**
+   - Clicking customer name on a row already in the Create Order selection does NOT alter the selection or unlock the customer/session lock.
+
+## Pass criteria (Customer Panel)
+
+- ✅ Empty state until first click.
+- ✅ Click on customer name fires single GET, populates panel.
+- ✅ Banned customer shows BANNED badge + reason.
+- ✅ Order count + lifetime value render.
+- ✅ Address / notes / labels not exposed.
+- ✅ Cross-shop id → 404 → error message.
+- ✅ Edit button stays disabled.
+- ✅ No POST/PUT/DELETE fired by Customer Panel.
+
 ## After this checklist passes
 
 Boss + ChatGPT decide whether to proceed to:
-- 2O-d Manual Create modal (requires GET customers + GET products by code)
-- Read-API gap filling (`GET /api/sale/customers/[id]`, session aggregates)
-- Pre-existing `ORDER-RESERVATION-CLEANUP` (separate dissent — flagged in 2O-c-DESIGN §4)
-- TEST-CLEANUP (per-route vitest expansion now partly addressed by 2T + 2O-c2)
+- 2O-d Manual Create modal (requires GET customers list + GET products by code)
+- Per-session booking-count enrichment on Customer Panel
+- ORDER-RESERVATION-CLEANUP Commit 2 historical backfill (run after Commits 1+3 stable ≥1 week)
+- TEST-CLEANUP (per-route vitest expansion now partly addressed)
 
 ## Refs
 

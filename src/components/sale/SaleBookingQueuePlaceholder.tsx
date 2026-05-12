@@ -91,6 +91,18 @@ export interface SaleBookingQueueProps {
    * refetch token in state.
    */
   readonly onMutationSuccess?: () => void;
+  /**
+   * Invoked when admin clicks a customer name in a booking row. Used
+   * by SaleWorkspaceShell to thread the chosen customer into the
+   * Customer Panel for live read-only display.
+   *
+   * Passing the row's full customer name as a hint lets the parent
+   * show an instant label while the customer fetch is in flight.
+   */
+  readonly onCustomerSelected?: (
+    customerId: string,
+    customerNameHint: string
+  ) => void;
 }
 
 // `isBookingConfirmable` lives in ./booking-queue.helpers.ts and is
@@ -129,6 +141,7 @@ const STATUS_BADGE: Record<
 export function SaleBookingQueuePlaceholder({
   state,
   onMutationSuccess,
+  onCustomerSelected,
 }: SaleBookingQueueProps) {
   const [confirmTarget, setConfirmTarget] = useState<SaleBookingRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<SaleBookingRow | null>(null);
@@ -298,7 +311,20 @@ export function SaleBookingQueuePlaceholder({
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                   {b.displayCode ?? '?'}
                 </span>
-                <span className="truncate">{b.customerName}</span>
+                {onCustomerSelected ? (
+                  <button
+                    type="button"
+                    className="truncate text-left underline-offset-2 hover:underline focus-visible:underline"
+                    onClick={() =>
+                      onCustomerSelected(b.customerId, b.customerName)
+                    }
+                    title="คลิกเพื่อดูข้อมูลลูกค้า"
+                  >
+                    {b.customerName}
+                  </button>
+                ) : (
+                  <span className="truncate">{b.customerName}</span>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className="font-mono text-[11px]">×{b.quantity}</span>

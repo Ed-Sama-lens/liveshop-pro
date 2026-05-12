@@ -94,7 +94,7 @@ Six panels, each wrapped in `ErrorBoundarySection`:
 | Booking row Confirm action | POST /api/sale/bookings/[id]/confirm | 2O-a |
 | Booking row Cancel action | POST /api/sale/bookings/[id]/cancel | 2O-b |
 | Booking row Select + Create Order | POST /api/sale/orders/from-bookings | 2O-c2 |
-| Customer Panel / ข้อมูลลูกค้า | demo data only | pending |
+| Customer Panel / ข้อมูลลูกค้า | GET /api/customers/[id] (existing admin route reused) | Phase 4 (2026-05-12) |
 | Inbox (Coming Soon) | static | future phase |
 
 Auto-selection picks LIVE → SCHEDULED → first. No interactive selector yet. All action buttons are `<Button disabled>` per the strict no-mutation contract.
