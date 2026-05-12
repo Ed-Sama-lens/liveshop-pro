@@ -244,13 +244,13 @@ export function SaleWorkspaceShell() {
           />
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              ระยะทดสอบ: Confirm + Cancel + Create Order ใช้งานแล้ว — Manual Create ยังปิดอยู่
+              ระยะทดสอบ: Confirm + Cancel + Create Order ใช้งานแล้ว — Manual Create เปิด preview (Phase 3)
             </p>
             <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
               3 mutations wired: Confirm + Cancel (per-row, modal) + Create Order
               (multi-select, modal). MISSING/MULTIPLE integrity rows block all 3 mutations.
-              Manual Create modal + Bulk actions remain disabled until separate
-              Boss/ChatGPT approval. No customer-facing message sent.
+              Manual Create modal เปิด preview ได้แต่ submit ยังปิดอยู่ (Phase 4 จะเปิด).
+              Bulk Confirm ยังปิด. No customer-facing message sent.
             </p>
           </div>
         </CardContent>
@@ -271,6 +271,9 @@ export function SaleWorkspaceShell() {
               setSelectedCustomerId(customerId);
               setSelectedCustomerNameHint(customerNameHint);
             }}
+            products={
+              productState.kind === 'ready' ? productState.products : []
+            }
           />
         </ErrorBoundarySection>
         <ErrorBoundarySection>

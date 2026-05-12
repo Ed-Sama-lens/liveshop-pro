@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Users, AlertTriangle, AlertOctagon, CheckCircle2, XCircle, ShoppingCart } from 'lucide-react';
+import { Users, AlertTriangle, AlertOctagon, CheckCircle2, XCircle, ShoppingCart, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -11,6 +11,8 @@ import { SalePanelCard } from './SalePanelCard';
 import { ConfirmBookingDialog } from './ConfirmBookingDialog';
 import { CancelBookingDialog } from './CancelBookingDialog';
 import { CreateOrderDialog } from './CreateOrderDialog';
+import { ManualCreateBookingDialog } from './ManualCreateBookingDialog';
+import type { SaleBroadcastProductRow } from './SaleProductGridPlaceholder';
 import {
   isBookingConfirmable,
   isBookingCancellable,
@@ -103,6 +105,14 @@ export interface SaleBookingQueueProps {
     customerId: string,
     customerNameHint: string
   ) => void;
+  /**
+   * BroadcastProduct rows for the currently selected live session,
+   * threaded from `SaleWorkspaceShell.productState`. Consumed by
+   * `ManualCreateBookingDialog` (Phase 3 skeleton) for client-side
+   * product code filtering. Empty array is acceptable — the modal
+   * surfaces an empty-state message.
+   */
+  readonly products?: readonly SaleBroadcastProductRow[];
 }
 
 // `isBookingConfirmable` lives in ./booking-queue.helpers.ts and is
@@ -142,6 +152,7 @@ export function SaleBookingQueuePlaceholder({
   state,
   onMutationSuccess,
   onCustomerSelected,
+  products,
 }: SaleBookingQueueProps) {
   const [confirmTarget, setConfirmTarget] = useState<SaleBookingRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<SaleBookingRow | null>(null);
@@ -156,6 +167,11 @@ export function SaleBookingQueuePlaceholder({
   // 2O-c2: Create Order dialog open state. Only set true when user
   // clicks the Create Order button with ≥1 selected row.
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
+  // Phase 3 (2026-05-13): Manual Create dialog open state. Mounted
+  // only when admin clicks the "+ สร้าง booking เอง" trigger. Phase 3
+  // skeleton has submit DISABLED — no POST fires. Wiring activates in
+  // Phase 4.
+  const [manualCreateOpen, setManualCreateOpen] = useState(false);
 
   // SaleBookingRow doesn't carry liveSessionId (it lives once on the
   // parent state shape returned by GET /api/sale/bookings). Augment
@@ -378,6 +394,11 @@ export function SaleBookingQueuePlaceholder({
           announces 2O-c2 wiring is pending. No fetch, no router push,
           no mutation. This is the "non-mutating placeholder" path Boss
           approved in the 2O-c1 spec.
+
+        Manual Create trigger row (Phase 3 2026-05-13)
+        - Single "+ สร้าง booking เอง" button beneath the Create Order
+          strip. Opens ManualCreateBookingDialog. Phase 3 skeleton has
+          submit DISABLED — no POST fires.
       */}
       <div className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-muted/30 px-2 py-2">
         <div className="flex items-center justify-between text-[11px]">
@@ -414,6 +435,15 @@ export function SaleBookingQueuePlaceholder({
             Bulk Confirm — ปิดเฟสนี้
           </Button>
         </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full gap-1"
+          onClick={() => setManualCreateOpen(true)}
+        >
+          <Plus className="size-3.5" aria-hidden />
+          สร้าง booking เอง (Manual Create — Phase 3 preview)
+        </Button>
       </div>
 
       {confirmTarget ? (
@@ -473,6 +503,30 @@ export function SaleBookingQueuePlaceholder({
           onSuccess={() => {
             setCreateOrderOpen(false);
             clearSelection();
+            onMutationSuccess?.();
+          }}
+        />
+      ) : null}
+
+      {/*
+        Manual Create dialog (Phase 3 skeleton 2026-05-13). Mounted
+        only when admin clicks the "+ สร้าง booking เอง" trigger AND a
+        live session is selected. Submit DISABLED in Phase 3 — no POST.
+        Phase 4 enables submit + adds error mapping + parent refetch.
+      */}
+      {manualCreateOpen ? (
+        <ManualCreateBookingDialog
+          open={manualCreateOpen}
+          onOpenChange={(next) => {
+            if (!next) setManualCreateOpen(false);
+          }}
+          liveSessionId={state.liveSessionId}
+          products={products ?? []}
+          onSuccess={() => {
+            // Reserved for Phase 4. Skeleton submit never invokes this
+            // (button is disabled). Wired now to avoid a Phase 4 prop
+            // edit on the placeholder.
+            setManualCreateOpen(false);
             onMutationSuccess?.();
           }}
         />

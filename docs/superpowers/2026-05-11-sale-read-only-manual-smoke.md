@@ -12,7 +12,8 @@ Most recent on top. Bump when the checklist needs new steps (new field surfaced,
 
 | Date | Commit | Change |
 |---|---|---|
-| 2026-05-12 | Customer Panel wiring (this commit) | Customer Panel reads live from `GET /api/customers/[id]`. Booking row customer name is now click-target. Mutation surface unchanged (still 3 POSTs). |
+| 2026-05-13 | Manual Create Phase 3 skeleton (this commit) | New button "+ สร้าง booking เอง" appears under Create Order strip. Opens `ManualCreateBookingDialog` with customer search (GET `/api/customers?search=`) + product picker (client-side filter on existing products array) + quantity input + PENDING_REVIEW status indicator + summary preview. Submit button DISABLED with copy "จะเปิดใช้งานในขั้นถัดไป". Mutation surface unchanged — **still 3 POSTs**. New GET surface: `/api/customers?search=` from sale workspace. |
+| 2026-05-12 | Customer Panel wiring | Customer Panel reads live from `GET /api/customers/[id]`. Booking row customer name is now click-target. Mutation surface unchanged (still 3 POSTs). |
 | 2026-05-12 | cron resilience `9211ef3` | `expireReservations()` Promise.allSettled + logger. ORDER-RESERVATION-CLEANUP Commit 3. |
 | 2026-05-12 | order reservation cleanup `520410d` | `orderRepository.transition('CONFIRMED')` marks `StockReservation.releasedAt`. ORDER-RESERVATION-CLEANUP Commit 1. |
 | 2026-05-12 | 2O-c2 `7a6a8b1` | Create Order **dialog + POST wiring**. POST `/api/sale/orders/from-bookings` fires from `CreateOrderDialog`. Mutation surface = **3** intentional POSTs (Confirm + Cancel + CreateOrder). Route-level vitest 19/19. |
