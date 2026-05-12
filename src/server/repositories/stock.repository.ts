@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { AppError } from '@/lib/errors';
+import { logger } from '@/lib/logging/logger';
 
 export interface VariantStock {
   readonly quantity: number;
@@ -173,6 +174,42 @@ export async function release(reservationId: string): Promise<ReleaseResult> {
   });
 }
 
+/**
+ * Find all StockReservation rows whose `expiresAt` is in the past and
+ * release them. Used as a periodic cron from outside the repo.
+ *
+ * ORDER-RESERVATION-CLEANUP Commit 3 (2026-05-12) — resilient batch
+ * processing:
+ *
+ * Before this fix, the function used `Promise.all` over `release()`
+ * calls. Any per-row failure (FK race, deleted row, reservedQty
+ * decrement guard failure, etc.) would abort the entire batch + leave
+ * later rows un-released. Cron behavior was all-or-nothing.
+ *
+ * After this fix:
+ * - `Promise.allSettled` processes every row independently.
+ * - Failures are logged with reservationId + error code so admin can
+ *   investigate, but the batch continues.
+ * - Return shape preserved (`Promise<number>` count of rows attempted)
+ *   for backward compatibility — no current callers depend on
+ *   per-row failure detail, but keeping the shape avoids breaking any
+ *   future caller that assumes "row count to attempt."
+ *
+ * Notes:
+ * - Sale-conversion reservations use NO_EXPIRY_SENTINEL (year 2099)
+ *   and never match `expiresAt <= now`. Cron does not touch them.
+ * - ORDER-RESERVATION-CLEANUP Commit 1 ensures order-confirm path
+ *   marks `releasedAt` itself, so post-Commit-1 cron should rarely
+ *   encounter orphan rows from order flow.
+ * - Storefront-checkout orphans created BEFORE Commit 1 ran may still
+ *   exist; the future-only fix doesn't backfill them. They are still
+ *   pickable by this cron (`releasedAt: null AND expiresAt <= now`)
+ *   and `release()` will set `releasedAt` + decrement `reservedQty`
+ *   AGAIN — a known data risk documented in
+ *   docs/superpowers/2026-05-12-expire-reservations-cron-resilience.md.
+ *   Commit 2 (one-shot backfill) addresses this; until then, cron
+ *   resilience prevents one bad row from blocking the rest.
+ */
 export async function expireReservations(): Promise<number> {
   const now = new Date();
 
@@ -181,7 +218,43 @@ export async function expireReservations(): Promise<number> {
     select: { id: true },
   });
 
-  await Promise.all(expired.map((r) => release(r.id)));
+  if (expired.length === 0) return 0;
+
+  const results = await Promise.allSettled(expired.map((r) => release(r.id)));
+
+  const released = results.filter((r) => r.status === 'fulfilled').length;
+  const failed = results.filter((r) => r.status === 'rejected').length;
+
+  if (failed > 0) {
+    const sampleFailures = results
+      .map((r, idx) => ({ result: r, reservationId: expired[idx].id }))
+      .filter(
+        (x): x is { result: PromiseRejectedResult; reservationId: string } =>
+          x.result.status === 'rejected'
+      )
+      .slice(0, 5)
+      .map((x) => ({
+        reservationId: x.reservationId,
+        error:
+          x.result.reason instanceof Error
+            ? x.result.reason.message
+            : String(x.result.reason),
+        code:
+          x.result.reason instanceof Error && 'code' in x.result.reason
+            ? (x.result.reason as { code?: string }).code
+            : undefined,
+      }));
+
+    logger.warn(
+      {
+        attempted: expired.length,
+        released,
+        failed,
+        sampleFailures,
+      },
+      'expireReservations: some releases failed; batch continued'
+    );
+  }
 
   return expired.length;
 }
