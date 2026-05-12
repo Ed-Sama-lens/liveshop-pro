@@ -17,6 +17,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { SaleBroadcastProductRow } from './SaleProductGridPlaceholder';
+import {
+  filterProductsByCodePrefix,
+  previewManualLineTotal,
+  formatCustomerSecondaryLine,
+} from './manual-create.helpers';
 
 /**
  * Manual Create booking modal — fourth /sale mutation surface.
@@ -181,53 +186,6 @@ function mapErrorByStatus(
  */
 function makeIdempotencyKey(): string {
   return crypto.randomUUID();
-}
-
-/**
- * Pure: format a customer hit for compact display in the search
- * dropdown. Phone + email both optional. Returns a stable secondary
- * line string.
- */
-function formatCustomerSecondaryLine(hit: CustomerSearchHit): string {
-  const parts: string[] = [];
-  if (hit.phone) parts.push(hit.phone);
-  if (hit.email) parts.push(hit.email);
-  if (parts.length === 0) return '—';
-  return parts.join(' · ');
-}
-
-/**
- * Pure: client-side product filter for the picker. Returns rows whose
- * displayCode starts with the typed prefix (case-insensitive), or all
- * rows when prefix is empty/short. Caps result list to 50 for render
- * cost — admin can refine the prefix further.
- */
-export function filterProductsByCodePrefix(
-  products: readonly SaleBroadcastProductRow[],
-  prefix: string
-): readonly SaleBroadcastProductRow[] {
-  const trimmed = prefix.trim();
-  if (trimmed.length === 0) {
-    return products.slice(0, 50);
-  }
-  const needle = trimmed.toLowerCase();
-  const matches = products.filter((p) =>
-    p.displayCode.toLowerCase().startsWith(needle)
-  );
-  return matches.slice(0, 50);
-}
-
-/**
- * Pure: compute display-only line total for the summary block. Server
- * is authoritative; this preview parses the Decimal-as-string price.
- */
-export function previewManualLineTotal(
-  unitPrice: string,
-  quantity: number
-): string {
-  const n = Number(unitPrice);
-  if (!Number.isFinite(n)) return '0.00';
-  return (n * quantity).toFixed(2);
 }
 
 export function ManualCreateBookingDialog({

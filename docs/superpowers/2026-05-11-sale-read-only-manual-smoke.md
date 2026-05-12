@@ -507,12 +507,69 @@ The Customer Panel now reads from `GET /api/customers/[id]`. No new sale-namespa
 - ✅ Edit button stays disabled.
 - ✅ No POST/PUT/DELETE fired by Customer Panel.
 
+## Mutation steps — Manual Create dialog (added Phase 4 2026-05-13)
+
+**Scope:** verify the Manual Create dialog opens, validates input, fires POST `/api/sale/bookings` with auto-generated idempotency key, and inserts a fresh PENDING_REVIEW row in the queue. **Use ONLY test customer + test variant on test session — do not exercise this on real customer rows during live commerce.**
+
+1. From `/sale` with a live session selected + Booking Queue visible, locate "+ สร้าง booking เอง (Manual Create — PENDING_REVIEW)" button beneath the Create Order strip.
+2. Click → `ManualCreateBookingDialog` opens.
+3. **Customer search step:**
+   - Type 1 character → "พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหาลูกค้า." message.
+   - Type 2+ characters of a test customer's name/phone → after ~350ms debounce, search hits render.
+   - Verify in Network: exactly ONE `GET /api/customers?search=...&limit=20` per stable input (debounce works).
+   - Banned test customer (if any) renders gray + button disabled + "ลูกค้านี้ถูก ban — เลือกไม่ได้" title attr.
+   - Click an unbanned hit → `SelectedCustomerCard` appears + search input/dropdown disappears.
+   - Click `X` clear button → re-opens search.
+4. **Product picker step:**
+   - Default list shows up to 50 products from the active session.
+   - Type a partial display code prefix (e.g. "A0") → list narrows.
+   - Out-of-stock variant renders with "หมด" red badge but is still clickable.
+   - Click a product → `SelectedProductCard` shows code + name + variant + price + stock.
+   - Click `X` → re-opens picker.
+5. **Quantity + status:**
+   - Default 1. Type 999 → accepted. Type 1000 → clamped to 999. Type 0 or negative → clamped to 1.
+   - Status indicator shows PENDING badge + "Confirm ภายหลัง" label. No way to switch to CONFIRMED in this UI.
+6. **Summary block:** populates when customer + product + quantity all valid. Shows Session id prefix + customer name + display code + product name + qty + unit price + line total (preview only; server is authoritative).
+7. **Submit:**
+   - Click "สร้าง booking (PENDING_REVIEW)" with valid form.
+   - Verify in Network: exactly ONE `POST /api/sale/bookings` with body `{liveSessionId, customerId, broadcastProductId, quantity, status: 'PENDING_REVIEW', idempotencyKey}` — `idempotencyKey` is a UUID v4 (36 chars, hex+dashes).
+   - Response 200 with `{success: true, data: {bookingId, status: 'PENDING_REVIEW', idempotent: false, reservation: null, ...}}`.
+   - Toast: "สร้าง booking สำเร็จ — {customerName} × {displayCode} × {qty}".
+   - Modal closes. Booking Queue refetches. New row appears with PENDING badge + Confirm button available + the chosen customer name + display code + quantity.
+   - Product Codes panel **stock count UNCHANGED** (no reservation at PENDING_REVIEW).
+8. **Idempotent replay (optional):**
+   - Reopen Manual Create with same customer + product + quantity. The UUID regenerates on each open, so even identical input produces a new booking. To test idempotency, simulate via DevTools by intercepting + resending the same body with the same key — expect `idempotent: true` in response + toast says "booking มีอยู่แล้ว".
+9. **Error cases (use test data):**
+   - **401:** open in private window without login → 401 → "ต้อง sign-in ก่อน".
+   - **403:** sign in as CHAT_SUPPORT → button visible (no UI gate) but submit returns 403 → "ไม่มีสิทธิ์สร้าง booking".
+   - **404:** delete the test customer between dialog open and submit → 404 → "ลูกค้าหรือสินค้าไม่พบ".
+   - **409:** ban the test customer, then submit → 409 → "สร้างไม่ได้".
+   - **429:** spam submit (or burn the rate-limit bucket via another tab) → 429 + Retry-After + "ส่งคำสั่งถี่เกินไป".
+
+## Pass criteria (Manual Create mutation — Phase 4)
+
+- ✅ Trigger button visible only when a live session is selected.
+- ✅ Customer search debounced at ~350ms; exactly one GET per stable input.
+- ✅ Banned customer non-selectable.
+- ✅ Product picker filters case-insensitively by displayCode prefix.
+- ✅ Out-of-stock variant flagged but selectable (PENDING_REVIEW does not check stock server-side).
+- ✅ Quantity clamped to [1, 999].
+- ✅ Status display locked to PENDING_REVIEW.
+- ✅ Single intentional POST per submit.
+- ✅ idempotencyKey matches UUID v4 format and server regex `^[A-Za-z0-9_-]{8,128}$`.
+- ✅ Success toast + dialog close + queue refetch.
+- ✅ Product Codes panel unchanged on PENDING_REVIEW create.
+- ✅ Inline error mapped for all 8 documented statuses.
+- ✅ Modal cannot be closed mid-request.
+
 ## After this checklist passes
 
 Boss + ChatGPT decide whether to proceed to:
-- 2O-d Manual Create modal (requires GET customers list + GET products by code)
-- Per-session booking-count enrichment on Customer Panel
+- ORDER-RESERVATION-CLEANUP CANCELLED branch fix (mirrors Commit 1 pattern)
 - ORDER-RESERVATION-CLEANUP Commit 2 historical backfill (run after Commits 1+3 stable ≥1 week)
+- Manual Create CONFIRMED-on-create option (deferred 2O-d4 — would expose status radio)
+- Per-session booking-count enrichment on Customer Panel
+- Omnichannel inbox discovery (Messenger/WhatsApp/Telegram — docs first)
 - TEST-CLEANUP (per-route vitest expansion now partly addressed)
 
 ## Refs
