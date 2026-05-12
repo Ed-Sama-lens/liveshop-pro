@@ -11,6 +11,7 @@ When adding a handoff:
 
 | Date | Doc | Hook |
 |---|---|---|
+| 2026-05-13 | [resume-after-customer-panel-await-next-go](2026-05-13-resume-after-customer-panel-await-next-go.md) | 10-hour session shipped 4 commits: ORDER-RESERVATION-CLEANUP Commit 3 cron resilience + Customer Panel live data wiring + Manual Create design + auth test checklist. HEAD=458a5db. Full state-restoration doc with §15 bootstrap block. |
 | 2026-05-11 | [resume-after-sale-shell](2026-05-11-resume-after-sale-shell.md) | /sale shell (2L-a) + 6-panel workspace skeleton (2L-b) shipped overnight; no /sale UI mutations wired, awaits review. |
 | 2026-05-10 | [resume-after-2M-c-await-2N-approval](2026-05-10-resume-after-2M-c-await-2N-approval.md) | 2M-c replay integrity patch shipped; createManual replay validates active-reservation cardinality. Pre-2N. |
 | 2026-05-10 | [resume-after-2M-a-await-2M-b-approval](2026-05-10-resume-after-2M-a-await-2M-b-approval.md) | 2M-a `_runConfirmInTx` extract shipped; 2M-b createManual runtime pending Boss + ChatGPT GO. |
