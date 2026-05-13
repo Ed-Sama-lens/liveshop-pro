@@ -29,6 +29,22 @@ const envSchema = z.object({
   // Rate Limiting (optional with defaults)
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+
+  // Omnichannel Booking feature flags (PR 2)
+  // All default false — schema migration ships first, behavior gated
+  // separately. Boss flips per staged rollout D1-D6 plan.
+  ALLOW_EVERGREEN_BROADCAST_PRODUCT: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .default(false)
+    .transform((v) => v === true || v === 'true'),
+  ALLOW_NON_LIVE_BOOKING: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .default(false)
+    .transform((v) => v === true || v === 'true'),
+  ALLOW_BOOKINGIDS_ONLY_CONVERSION: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .default(false)
+    .transform((v) => v === true || v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;
