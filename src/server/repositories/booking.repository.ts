@@ -90,14 +90,25 @@ export interface CancelBookingResult {
 
 export interface ConvertBookingsToOrderInput {
   readonly shopId: string;
-  readonly liveSessionId: string;
-  readonly customerId: string;
+  /**
+   * V1 legacy field: required when caller uses the (shopId,
+   * liveSessionId, customerId) grouping path. After PR 2 AR-3, this
+   * is optional — omit it together with customerId to use the new
+   * bookingIds-only V2 path (requires ALLOW_BOOKINGIDS_ONLY_CONVERSION).
+   */
+  readonly liveSessionId?: string | null;
+  /**
+   * V1 legacy field: required for live-bound conversion. V2 path
+   * infers customerId from the bookingIds (all must share customer).
+   */
+  readonly customerId?: string;
   /** Admin User.id who triggered conversion. */
   readonly changedById: string;
   /**
-   * Optional whitelist for partial conversion (Phase 2 hook). Phase 1
-   * route layer omits this — conversion picks up all CONFIRMED bookings
-   * for the (shop, liveSession, customer) tuple.
+   * V1: optional whitelist for partial conversion within a live
+   * session's customer's CONFIRMED bookings.
+   * V2: REQUIRED for bookingIds-only path. All ids must belong to
+   * same shop + same customer; multi-customer hard-rejected with 409.
    */
   readonly bookingIds?: readonly string[];
 }
@@ -589,7 +600,59 @@ export const bookingRepository = Object.freeze({
   async convertToOrder(
     input: ConvertBookingsToOrderInput
   ): Promise<ConvertBookingsToOrderResult> {
-    const { shopId, liveSessionId, customerId, changedById, bookingIds } = input;
+    const { shopId, liveSessionId: liveSessionIdInput, customerId: customerIdInput, changedById, bookingIds } = input;
+
+    // ─── V2 dispatcher (PR 2 AR-3): bookingIds-only conversion ───────
+    //
+    // When caller omits both liveSessionId AND customerId but supplies
+    // bookingIds, route through the V2 path. Requires the
+    // ALLOW_BOOKINGIDS_ONLY_CONVERSION flag (defense-in-depth — route
+    // layer also gates).
+    //
+    // V2 path:
+    // 1. Fetch all bookings by id within shopId
+    // 2. Validate same customer (hard reject multi-customer with 409
+    //    per Q-18)
+    // 3. Derive customerId from the fetched rows
+    // 4. Validate all CONFIRMED + not already converted
+    // 5. Build idempotency key v2 (no liveSessionId in namespace)
+    // 6. Reuse v1's transactional creation logic
+    //
+    // V1 path is preserved unchanged for legacy callers.
+    const isV2Dispatch =
+      (liveSessionIdInput === undefined || liveSessionIdInput === null) &&
+      customerIdInput === undefined &&
+      bookingIds !== undefined &&
+      bookingIds.length > 0;
+
+    if (isV2Dispatch) {
+      if (!allowBookingIdsOnlyConversion()) {
+        throw new ValidationError(
+          'bookingIds-only conversion is not enabled. Set ALLOW_BOOKINGIDS_ONLY_CONVERSION=true to enable.',
+          { bookingIds: ['requires ALLOW_BOOKINGIDS_ONLY_CONVERSION=true'] }
+        );
+      }
+      return this._convertToOrderV2({ shopId, bookingIds: bookingIds!, changedById });
+    }
+
+    // V1 path: legacy live-bound conversion. Both liveSessionId +
+    // customerId required.
+    if (
+      typeof liveSessionIdInput !== 'string' ||
+      liveSessionIdInput.length === 0 ||
+      typeof customerIdInput !== 'string' ||
+      customerIdInput.length === 0
+    ) {
+      throw new ValidationError(
+        'convertToOrder requires either (liveSessionId + customerId) for V1 legacy path or bookingIds-only for V2 path',
+        {
+          liveSessionId: ['required when not using bookingIds-only path'],
+          customerId: ['required when not using bookingIds-only path'],
+        }
+      );
+    }
+    const liveSessionId = liveSessionIdInput;
+    const customerId = customerIdInput;
 
     return prisma.$transaction(async (tx) => {
       // 1. Fetch all bookings for (shop, session, customer). Filter to CONFIRMED
@@ -894,6 +957,298 @@ export const bookingRepository = Object.freeze({
         totalAmount: totals.total,
       });
     });
+  },
+
+  /**
+   * V2 conversion path (PR 2 AR-3 — bookingIds-only).
+   *
+   * Differences from V1:
+   * - No liveSessionId / customerId in input. Customer is derived from
+   *   the bookings themselves; multi-customer hard-rejected.
+   * - Idempotency key uses v2 namespace
+   *   `sale-conv:v2:{shopId}:{customerId}:{hash}`. v1 keys remain valid
+   *   on existing Orders.
+   * - Supports bookings with mixed liveSessionId values (live + null)
+   *   provided they share shop + customer.
+   *
+   * Same invariants preserved from V1:
+   * - All bookings must be CONFIRMED + not already converted.
+   * - StockReservation rows transfer to new Order via bookingId →
+   *   orderId; reservedQty unchanged.
+   * - Order created with status RESERVED + channel MANUAL.
+   * - OrderAudit action CREATED_FROM_SALE_BOOKINGS.
+   */
+  async _convertToOrderV2(input: {
+    readonly shopId: string;
+    readonly bookingIds: readonly string[];
+    readonly changedById: string;
+  }): Promise<ConvertBookingsToOrderResult> {
+    const { shopId, bookingIds, changedById } = input;
+
+    if (bookingIds.length === 0) {
+      throw new ValidationError('bookingIds must contain at least one id', {
+        bookingIds: ['empty array not allowed'],
+      });
+    }
+
+    return prisma.$transaction(async (tx) => {
+      // 1. Fetch bookings by id within shop. Lookup is shop-scoped to
+      //    prevent cross-shop leakage even if caller passes a foreign id.
+      const allBookings = await tx.booking.findMany({
+        where: { id: { in: [...bookingIds] }, shopId },
+        include: {
+          broadcastProduct: {
+            select: { id: true, productId: true, variantId: true },
+          },
+          stockReservations: {
+            where: { releasedAt: null },
+            select: {
+              id: true,
+              variantId: true,
+              quantity: true,
+              bookingId: true,
+              orderId: true,
+              releasedAt: true,
+            },
+          },
+        },
+      });
+
+      if (allBookings.length === 0) {
+        throw new AppError(
+          'No bookings found for the requested ids in this shop',
+          BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT,
+          422
+        );
+      }
+
+      // 2. Validate same customer (hard reject multi-customer per Q-18).
+      const distinctCustomers = new Set(allBookings.map((b) => b.customerId));
+      if (distinctCustomers.size !== 1) {
+        throw new ConflictError(
+          'All bookings must belong to the same customer (multi-customer conversion not supported)'
+        );
+      }
+      const customerId = [...distinctCustomers][0];
+
+      // 3. Validate every requested id was found.
+      const foundIds = new Set(allBookings.map((b) => b.id));
+      const missing = bookingIds.filter((id) => !foundIds.has(id));
+      if (missing.length > 0) {
+        throw new NotFoundError(
+          `Booking(s) not found in shop: ${missing.join(', ')}`
+        );
+      }
+
+      // 4. Map → pure-helper snapshots + validate convertibility.
+      const snapshots: ConfirmedBookingSnapshot[] = [];
+      for (const b of allBookings) {
+        if (!b.broadcastProduct) {
+          throw new AppError(
+            'BroadcastProduct missing for booking ' + b.id,
+            BOOKING_ERROR_CODES.BROADCAST_PRODUCT_NOT_FOUND,
+            500
+          );
+        }
+        const variantId = b.broadcastProduct.variantId;
+        if (!variantId) {
+          throw new AppError(
+            'BroadcastProduct.variantId missing for booking ' + b.id,
+            BOOKING_ERROR_CODES.VARIANT_REQUIRED,
+            500
+          );
+        }
+        snapshots.push(
+          Object.freeze({
+            id: b.id,
+            status: b.status as BookingStatus,
+            quantity: b.quantity,
+            unitPrice: b.unitPrice.toString(),
+            productId: b.broadcastProduct.productId,
+            variantId,
+          })
+        );
+      }
+
+      const eligible = selectConfirmedBookings(snapshots, { bookingIds });
+      const preflight = validateBookingsConvertible(eligible);
+      if (!preflight.ok) {
+        if (preflight.code === BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT) {
+          throw new AppError(
+            'No CONFIRMED bookings to convert',
+            BOOKING_ERROR_CODES.NO_BOOKINGS_TO_CONVERT,
+            422
+          );
+        }
+        throw new ConflictError(
+          'Conversion preflight failed: ' + preflight.code
+        );
+      }
+
+      // 5. Build v2 idempotency key (no liveSessionId in namespace).
+      const idempotencyKey = buildConversionIdempotencyKeyV2({
+        shopId,
+        customerId,
+        bookingIds: eligible.map((b) => b.id),
+      });
+
+      // 6. Idempotency check — existing Order with same v2 key?
+      const existing = await tx.order.findUnique({
+        where: { idempotencyKey },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          totalAmount: true,
+          convertedFromBookings: { select: { id: true } },
+        },
+      });
+      if (existing) {
+        const existingIds = new Set(
+          existing.convertedFromBookings.map((b) => b.id)
+        );
+        const requestedIds = new Set(eligible.map((b) => b.id));
+        const sameSet =
+          existingIds.size === requestedIds.size &&
+          [...existingIds].every((id) => requestedIds.has(id));
+        if (!sameSet) {
+          throw new AppError(
+            'V2 idempotency key matches an existing Order with a different booking set',
+            BOOKING_ERROR_CODES.CONVERSION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        return Object.freeze({
+          orderId: existing.id,
+          orderNumber: existing.orderNumber,
+          status: 'RESERVED' as const,
+          idempotent: true,
+          bookingCount: existing.convertedFromBookings.length,
+          bookingIds: Object.freeze([...existingIds]),
+          totalAmount: existing.totalAmount.toString(),
+        });
+      }
+
+      // 7. Build OrderItem groups + totals.
+      const groups = groupBookingsForOrderItems(eligible);
+      const totals = computeOrderTotals(groups);
+
+      // 8. Generate orderNumber. Reuses shop-scoped serial pattern from
+      //    existing Order creation logic (delegated to orderRepository).
+      const orderNumber = await this._generateOrderNumber(shopId, tx);
+
+      // 9. Create Order in RESERVED status.
+      const order = await tx.order.create({
+        data: {
+          shopId,
+          customerId,
+          orderNumber,
+          status: 'RESERVED',
+          channel: 'MANUAL',
+          totalAmount: totals.total,
+          shippingFee: totals.shippingFee,
+          idempotencyKey,
+        },
+        select: { id: true, orderNumber: true },
+      });
+
+      // 10. Create OrderItem rows.
+      for (const group of groups) {
+        await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: group.productId,
+            variantId: group.variantId,
+            quantity: group.quantity,
+            unitPrice: group.unitPrice,
+            totalPrice: group.totalPrice,
+          },
+        });
+      }
+
+      // 11. Transfer StockReservation rows to the new Order (bookingId
+      //     preserved + orderId set). reservedQty unchanged.
+      const reservationIds: string[] = [];
+      for (const b of allBookings) {
+        for (const r of b.stockReservations) {
+          if (r.releasedAt !== null) continue;
+          reservationIds.push(r.id);
+        }
+      }
+      if (reservationIds.length > 0) {
+        await tx.stockReservation.updateMany({
+          where: { id: { in: reservationIds } },
+          data: { orderId: order.id },
+        });
+      }
+
+      // 12. Flip bookings to CONVERTED_TO_ORDER + record history.
+      for (const b of eligible) {
+        await tx.booking.update({
+          where: { id: b.id },
+          data: {
+            status: 'CONVERTED_TO_ORDER',
+            convertedOrderId: order.id,
+          },
+        });
+        await tx.bookingHistory.create({
+          data: {
+            bookingId: b.id,
+            fromStatus: 'CONFIRMED',
+            toStatus: 'CONVERTED_TO_ORDER',
+            changedById,
+          },
+        });
+      }
+
+      // 13. OrderAudit for traceability.
+      await tx.orderAudit.create({
+        data: {
+          orderId: order.id,
+          action: 'CREATED_FROM_SALE_BOOKINGS',
+          performedBy: changedById,
+          // Optional metadata; v2 audit captures source path.
+          metadata: {
+            conversionPath: 'v2',
+            bookingIds: eligible.map((b) => b.id),
+          },
+        },
+      });
+
+      return Object.freeze({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'RESERVED' as const,
+        idempotent: false,
+        bookingCount: eligible.length,
+        bookingIds: Object.freeze(eligible.map((b) => b.id)),
+        totalAmount: totals.total,
+      });
+    });
+  },
+
+  /**
+   * Internal: generate shop-scoped order number. Extracted from inline
+   * V1 logic for reuse by V2 path. Format matches existing pattern
+   * (ORD-NNNNNN with N = shop-scoped sequence).
+   */
+  async _generateOrderNumber(
+    shopId: string,
+    tx: Prisma.TransactionClient
+  ): Promise<string> {
+    const latest = await tx.order.findFirst({
+      where: { shopId },
+      orderBy: { orderNumber: 'desc' },
+      select: { orderNumber: true },
+    });
+    let nextSeq = 1;
+    if (latest) {
+      const match = latest.orderNumber.match(/^ORD-(\d+)$/);
+      if (match) {
+        nextSeq = parseInt(match[1], 10) + 1;
+      }
+    }
+    return `ORD-${nextSeq.toString().padStart(6, '0')}`;
   },
 
   /**
