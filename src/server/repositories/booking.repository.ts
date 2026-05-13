@@ -1040,7 +1040,52 @@ export const bookingRepository = Object.freeze({
         );
       }
 
-      // 4. Map → pure-helper snapshots + validate convertibility.
+      // 4. Idempotency-first lookup (pre-filter): builds v2 key from
+      //    the requested bookingIds list (not from the CONFIRMED-filtered
+      //    eligible list) so replays after the bookings flipped to
+      //    CONVERTED_TO_ORDER still resolve to the existing Order
+      //    instead of throwing NO_BOOKINGS_TO_CONVERT.
+      const idempotencyKeyEarly = buildConversionIdempotencyKeyV2({
+        shopId,
+        customerId,
+        bookingIds,
+      });
+      const existingEarly = await tx.order.findUnique({
+        where: { idempotencyKey: idempotencyKeyEarly },
+        select: {
+          id: true,
+          orderNumber: true,
+          totalAmount: true,
+          convertedFromBookings: { select: { id: true } },
+        },
+      });
+      if (existingEarly) {
+        const existingIds = new Set(
+          existingEarly.convertedFromBookings.map((b) => b.id)
+        );
+        const requestedIds = new Set(bookingIds);
+        const sameSet =
+          existingIds.size === requestedIds.size &&
+          [...existingIds].every((id) => requestedIds.has(id));
+        if (!sameSet) {
+          throw new AppError(
+            'V2 idempotency key matches an existing Order with a different booking set',
+            BOOKING_ERROR_CODES.CONVERSION_INTEGRITY_ERROR,
+            500
+          );
+        }
+        return Object.freeze({
+          orderId: existingEarly.id,
+          orderNumber: existingEarly.orderNumber,
+          status: 'RESERVED' as const,
+          idempotent: true,
+          bookingCount: existingEarly.convertedFromBookings.length,
+          bookingIds: Object.freeze([...existingIds]),
+          totalAmount: existingEarly.totalAmount.toString(),
+        });
+      }
+
+      // 5. Map → pure-helper snapshots + validate convertibility.
       const snapshots: ConfirmedBookingSnapshot[] = [];
       for (const b of allBookings) {
         if (!b.broadcastProduct) {
@@ -1085,14 +1130,18 @@ export const bookingRepository = Object.freeze({
         );
       }
 
-      // 5. Build v2 idempotency key (no liveSessionId in namespace).
+      // 6. Build v2 idempotency key (post-filter — same input as
+      //    Step 4 when eligible.length === bookingIds.length, so the
+      //    Step 4 short-circuit covers most replay paths; this step
+      //    handles the partial-conversion edge case where eligible
+      //    differs from bookingIds).
       const idempotencyKey = buildConversionIdempotencyKeyV2({
         shopId,
         customerId,
         bookingIds: eligible.map((b) => b.id),
       });
 
-      // 6. Idempotency check — existing Order with same v2 key?
+      // 7. Idempotency check (post-filter): existing Order with same key?
       const existing = await tx.order.findUnique({
         where: { idempotencyKey },
         select: {
