@@ -99,11 +99,19 @@ export async function GET(
     const rows = await prisma.broadcastProduct.findMany({
       where: {
         liveSessionId,
+        // PR 2 AR-1: BP.shopId column exists post-migration. Adding it
+        // to the filter here is defense-in-depth — the liveSession
+        // ownership check above already proves the live session
+        // belongs to the caller's shop, but a future bug that
+        // accidentally mismatches BP.shopId from BP.liveSessionId
+        // (e.g. moved session) would still be caught here.
+        shopId: user.shopId,
         variantId: { not: null },
       },
       orderBy: { displayOrder: 'asc' },
       select: {
         id: true,
+        shopId: true,
         displayCode: true,
         displayOrder: true,
         priceOverride: true,
