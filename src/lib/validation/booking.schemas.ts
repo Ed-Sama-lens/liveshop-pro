@@ -48,11 +48,25 @@ export type CancelBookingBody = z.infer<typeof cancelBookingBodySchema>;
 
 export const CREATE_BOOKING_STATUSES = ['PENDING_REVIEW', 'CONFIRMED'] as const;
 
+/**
+ * Booking source enum mirror — must stay in sync with Prisma
+ * `BookingSource`. Listed explicitly here so zod can validate
+ * client-supplied values without coupling validation to generated
+ * Prisma types. Source MANUAL is the only acceptable client-supplied
+ * value for admin POST /api/sale/bookings; future inbound runtimes
+ * (LIVE_COMMENT / MESSENGER_INBOX / etc) MUST be set internally from
+ * trusted channel context, not from client input — see Q-17.
+ */
+export const CLIENT_SUPPLIED_BOOKING_SOURCES = ['MANUAL'] as const;
+
 export const createBookingBodySchema = z.object({
+  // PR 2 AR-2: liveSessionId becomes optional. When omitted/null, the
+  // route requires ALLOW_NON_LIVE_BOOKING flag + evergreen BP path.
   liveSessionId: z
     .string()
-    .min(1, 'liveSessionId is required')
-    .max(128, 'liveSessionId is too long'),
+    .min(1, 'liveSessionId must be non-empty when provided')
+    .max(128, 'liveSessionId is too long')
+    .optional(),
   customerId: z
     .string()
     .min(1, 'customerId is required')
@@ -69,6 +83,11 @@ export const createBookingBodySchema = z.object({
   status: z.enum(CREATE_BOOKING_STATUSES, {
     message: 'status must be PENDING_REVIEW or CONFIRMED',
   }),
+  // PR 2 AR-2: source is admin-facing optional. Defaults to MANUAL
+  // at repository when omitted. Per Q-17, only MANUAL is acceptable
+  // from client input; other sources are reserved for internal
+  // trusted runtimes.
+  source: z.enum(CLIENT_SUPPLIED_BOOKING_SOURCES).optional(),
   idempotencyKey: z
     .string()
     .regex(
