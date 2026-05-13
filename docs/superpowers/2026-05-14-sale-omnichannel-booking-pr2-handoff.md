@@ -337,27 +337,157 @@ Each stage independent + reversible via flag flip-off + Vercel redeploy.
 
 ---
 
-## 16. Rollback plan
+## 16. Rollback plan (D1 runbook)
 
-### Stage rollback (flag false)
-Any time after D3-D6: flip flag false in Vercel env, redeploy. New behavior gated off; existing data unaffected.
+This section is the source of truth for rollback. It supersedes the earlier abbreviated draft. Read fully before D1.
 
-### Schema rollback (only if no null/evergreen rows)
+### 16.1 Rollback prerequisites (do BEFORE any rollback DDL)
+
+All of the following must be true before any rollback step runs:
+
+1. **All three feature flags are OFF in Vercel env.**
+   - `ALLOW_EVERGREEN_BROADCAST_PRODUCT=false`
+   - `ALLOW_NON_LIVE_BOOKING=false`
+   - `ALLOW_BOOKINGIDS_ONLY_CONVERSION=false`
+   - Vercel redeploy after flip; production traffic must be running on the flag-off build.
+2. **Zero non-live rows.** Confirm with read-only queries:
+   ```sql
+   SELECT count(*) FROM "Booking" WHERE "liveSessionId" IS NULL;          -- must be 0
+   SELECT count(*) FROM "BroadcastProduct" WHERE "liveSessionId" IS NULL; -- must be 0
+   ```
+   If either count > 0, **STOP**. Do not run schema rollback. The migration cannot be reversed without data loss; escalate and either accept the state or restore from Railway snapshot.
+3. **Railway snapshot is fresh.** Confirm a snapshot was taken on D1 immediately before `prisma migrate deploy` ran. If no snapshot exists, take one now before any rollback step.
+4. **Dry-run on local/staging first.** Run the full rollback script against a local Docker Postgres restored from the snapshot OR against a Railway staging branch DB. Only run on production after dry-run passes.
+5. **Maintenance window.** Schema rollback briefly locks `Booking` and `BroadcastProduct` for the `ALTER COLUMN ... SET NOT NULL` statements. Schedule a low-traffic window.
+
+### 16.2 Feature flag rollback (always safe; do this first)
+
+Flag flip is the reversible escape hatch and does not require any prerequisites beyond redeploy.
+
+| Step | Action | Verify |
+|---|---|---|
+| 1 | Vercel env: `ALLOW_EVERGREEN_BROADCAST_PRODUCT=false`. Redeploy. | Hit `/sale` admin pages; smoke creating an evergreen BP — expect 400. |
+| 2 | Vercel env: `ALLOW_NON_LIVE_BOOKING=false`. Redeploy. | Smoke `POST /api/sale/bookings` without `liveSessionId` — expect 400 with `ALLOW_NON_LIVE_BOOKING=false` message. |
+| 3 | Vercel env: `ALLOW_BOOKINGIDS_ONLY_CONVERSION=false`. Redeploy. | Smoke `POST /api/sale/orders/from-bookings` with bookingIds-only body — expect 400 with `ALLOW_BOOKINGIDS_ONLY_CONVERSION=false` message. |
+
+Run the standard 15-probe production smoke after each flag flip. Existing data is unaffected. v1 conversion path + live-bound bookings continue to work.
+
+### 16.3 Booking rollback
+
+Only proceed if §16.1 prerequisites pass.
+
 ```sql
--- Verify no production rows would violate
-SELECT count(*) FROM "Booking" WHERE "liveSessionId" IS NULL; -- must be 0
-SELECT count(*) FROM "BroadcastProduct" WHERE "liveSessionId" IS NULL; -- must be 0
+-- 1. Final guard (re-check immediately before DDL).
+SELECT count(*) FROM "Booking" WHERE "liveSessionId" IS NULL;  -- must be 0
 
--- Rollback
+-- 2. Re-enforce NOT NULL on liveSessionId.
 ALTER TABLE "Booking" ALTER COLUMN "liveSessionId" SET NOT NULL;
-DROP INDEX "BroadcastProduct_shop_evergreen_displayCode_key";
-ALTER TABLE "BroadcastProduct" ALTER COLUMN "liveSessionId" SET NOT NULL;
 
--- shopId column kept (backfilled values still accurate)
+-- 3. Restore RESTRICT FK semantics.
+--    PR 2 migration changed FK from implicit RESTRICT to explicit SET NULL.
+--    Reverting requires drop + re-add. Safe only after step 2 succeeded
+--    (no NULL rows exist).
+ALTER TABLE "Booking" DROP CONSTRAINT "Booking_liveSessionId_fkey";
+ALTER TABLE "Booking"
+  ADD CONSTRAINT "Booking_liveSessionId_fkey"
+  FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession"("id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
 ```
 
-### Worst case
-Restore from Railway snapshot. Last-resort option, requires acceptable downtime window.
+**Hard warning:** FK semantics rollback is NOT safe once null rows exist. After PR 2 deploy + flag flip-on, if a single non-live Booking has been created, the column becomes effectively un-revertable to NOT NULL — the only safe path is forward (keep the new schema, disable flag to stop creating new non-live rows, archive or migrate the existing non-live rows manually).
+
+### 16.4 Index rollback
+
+PR 2 added two indexes. Each can be dropped independently.
+
+```sql
+-- New cross-source index on Booking (added by step 9 of migration).
+-- Safe to drop any time; queries fall back to existing
+-- (shopId, status) + (liveSessionId, status) indexes.
+DROP INDEX IF EXISTS "Booking_shopId_source_status_idx";
+
+-- Partial unique index on BroadcastProduct (added by step 7 of migration).
+-- Drop only when reverting AR-1 evergreen support. While liveSessionId
+-- remains nullable, the partial index is the only thing preventing
+-- duplicate evergreen displayCodes per shop.
+DROP INDEX IF EXISTS "BroadcastProduct_shop_evergreen_displayCode_key";
+```
+
+**Preserve unchanged:** keep the existing `BroadcastProduct_liveSessionId_displayCode_key` (live-bound rows) and all `@@index([liveSessionId])` / `@@index([liveSessionId, status])` / `@@index([liveSessionId, displayOrder])` — they were not added by PR 2.
+
+### 16.5 BroadcastProduct rollback
+
+Two layers; pick based on rollback scope.
+
+**Partial rollback (keep new code, revert evergreen support only):**
+```sql
+-- Guard: zero evergreen rows.
+SELECT count(*) FROM "BroadcastProduct" WHERE "liveSessionId" IS NULL;  -- must be 0
+
+-- Drop partial unique index first (step 7).
+DROP INDEX IF EXISTS "BroadcastProduct_shop_evergreen_displayCode_key";
+
+-- Re-enforce NOT NULL on liveSessionId.
+ALTER TABLE "BroadcastProduct" ALTER COLUMN "liveSessionId" SET NOT NULL;
+
+-- Keep BP.shopId column + FK + index. Repository + route code still
+-- depends on bp.shopId for the cross-shop scope check; dropping shopId
+-- would break runtime even when liveSessionId is non-null. Acceptable
+-- residue: a column + FK + index that is now redundant with the
+-- liveSession traversal but harmless.
+```
+
+**Full rollback (also drop new shopId column):**
+Only do this if reverting PR 2 entirely and code is being reverted to a master commit older than `0210e48` (the migration commit). Requires the new query path in `bookingRepository.createManual` (which reads `bp.shopId`) to be reverted first; otherwise repository runtime breaks.
+
+```sql
+-- Guard: code is reverted; no new code path depends on bp.shopId.
+-- VERIFY by reading the deployed src/server/repositories/booking.repository.ts
+-- before running this block.
+
+ALTER TABLE "BroadcastProduct" DROP CONSTRAINT "BroadcastProduct_shopId_fkey";
+DROP INDEX IF EXISTS "BroadcastProduct_shopId_idx";
+ALTER TABLE "BroadcastProduct" DROP COLUMN "shopId";
+```
+
+### 16.6 Idempotency rollback
+
+V2 idempotency keys (`sale-conv:v2:{shopId}:{customerId}:{hash}`) cannot collide with V1 keys (different prefix). No rollback action is needed for idempotency keys.
+
+| Concern | Action |
+|---|---|
+| Disable v2 going forward | Flip `ALLOW_BOOKINGIDS_ONLY_CONVERSION=false` (§16.2 step 3). New v2 conversions reject with 400. |
+| Existing v2-converted Orders | **Do nothing.** v2 Orders are normal `Order` rows with valid `idempotencyKey`. Deleting or rewriting them would corrupt order history, OrderItem rows, StockReservation transfer chain, and OrderAudit trail. They stay forever. |
+| v1+v2 race for same booking set | Resolved by `Order.idempotencyKey @unique`; first writer wins, second writer hits unique-violation and is treated as conflict. No rollback action. |
+
+### 16.7 Worst case — Railway snapshot restore
+
+If §16.1 prerequisites are not met (non-live rows exist + Boss accepts data loss) OR §16.3 / §16.5 fail mid-DDL leaving the schema in a mixed state:
+
+1. Take a fresh snapshot of the current (broken) state for forensics.
+2. Restore from the pre-D1 Railway snapshot.
+3. All booking activity between D1 deploy and restore time is lost; cross-reference with Vercel access logs + Stripe / Maybank payment timeline if any customer-visible state was affected (none should be, since checkout/payment paths are untouched by PR 2).
+4. Vercel redeploy on the pre-PR-2 commit to ensure code/schema alignment.
+5. Document the incident; do not re-attempt D1 until the failure root cause is understood.
+
+### 16.8 Recovery if rollback itself fails
+
+| Failure | Action |
+|---|---|
+| `ALTER ... SET NOT NULL` aborts because null rows exist | The §16.1 guard was bypassed. Re-check, find + fix the null rows (delete or backfill `liveSessionId` from related context), retry. |
+| `DROP CONSTRAINT` aborts because dependent rows fail RESTRICT | Investigate — no booking should depend on RESTRICT pre-migration; abort and snapshot-restore. |
+| `DROP INDEX` succeeds but partial-unique guarantee is now lost | Re-create the index if rolling back was a mistake; otherwise accept the looser state and document. |
+| `DROP COLUMN` aborts because code still reads bp.shopId | Code revert is incomplete. Restore from snapshot or finish code revert first. |
+
+### 16.9 Verify after rollback
+
+After any rollback:
+1. Re-run the 15-probe production smoke.
+2. Confirm `GET /api/sale/live-sessions/[id]/broadcast-products` still returns existing live-bound BPs.
+3. Confirm `POST /api/sale/bookings` with valid `liveSessionId` still creates bookings.
+4. Confirm `POST /api/sale/orders/from-bookings` with V1 body still converts.
+5. Check Vercel logs for unexpected 500s in the 30-minute window post-rollback.
+6. Snapshot the rolled-back state for the deployment audit log.
 
 ---
 
