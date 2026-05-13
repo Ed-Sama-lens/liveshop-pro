@@ -248,25 +248,26 @@ export function SaleBookingQueuePlaceholder({
     );
   }
 
-  if (state.bookings.length === 0) {
-    return (
-      <SalePanelCard
-        title="Customer Bookings / รายการจอง"
-        subtitle="ยังไม่มีรายการจองในรอบไลฟ์นี้"
-        icon={Users}
-        variant="live"
-      >
-        <p className="text-sm text-muted-foreground">
-          ยังไม่มีลูกค้าจองในรอบนี้ — เริ่มจองจาก inbox/comment เมื่อพร้อม
-        </p>
-      </SalePanelCard>
-    );
-  }
-
+  // Empty-state handling (Boss 2026-05-13 fix):
+  // Previously this branch early-returned, which hid the action strip
+  // below (Create Order + Manual Create button). Result: on a fresh
+  // session with zero bookings, admin could not create the first
+  // booking via UI — chicken-and-egg deadlock.
+  //
+  // Now: when bookings.length === 0 we render an inline empty hint at
+  // the top of the panel body but continue to mount the strip + Manual
+  // Create button below. The booking list rows are skipped (nothing
+  // to render). The Create Order button stays disabled via the
+  // existing selectedIds.size === 0 gate. The Manual Create button is
+  // always visible when state.kind === 'ready' so admin can seed the
+  // first booking manually.
+  const isEmpty = state.bookings.length === 0;
   const selectedCount = selectedIds.size;
-  const subtitle = selectedCount > 0
-    ? `${state.bookings.length} รายการ — เลือก ${selectedCount} (Create Order รอ 2O-c2)`
-    : `${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm + Cancel + Select พร้อมใช้`;
+  const subtitle = isEmpty
+    ? 'ยังไม่มีรายการจอง — กดสร้าง booking เองด้านล่างเพื่อเริ่ม'
+    : selectedCount > 0
+      ? `${state.bookings.length} รายการ — เลือก ${selectedCount} (Create Order รอ 2O-c2)`
+      : `${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm + Cancel + Select พร้อมใช้`;
 
   return (
     <SalePanelCard
@@ -275,7 +276,13 @@ export function SaleBookingQueuePlaceholder({
       icon={Users}
       variant="live"
     >
-      <div className="space-y-1.5 max-h-80 overflow-y-auto">
+      {isEmpty ? (
+        <p className="text-sm text-muted-foreground">
+          ยังไม่มีลูกค้าจองในรอบนี้ — เริ่มจองจาก inbox/comment เมื่อพร้อม
+          หรือกดสร้าง booking เองด้านล่าง.
+        </p>
+      ) : null}
+      <div className={`space-y-1.5 max-h-80 overflow-y-auto${isEmpty ? ' hidden' : ''}`}>
         {state.bookings.slice(0, 20).map((b) => {
           const badge = STATUS_BADGE[b.status];
           const integrityBadge = renderIntegrityBadge(b.reservationIntegrity);
