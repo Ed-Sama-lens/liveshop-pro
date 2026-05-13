@@ -52,3 +52,10 @@ next-env.d.ts
 .claude/
 
 .vercel
+
+# playwright local artifacts (auth state + screenshots + reports)
+# storageState files MUST NEVER be committed — they contain auth session.
+tests/e2e/.auth/
+tests/e2e/screenshots/
+test-results/
+playwright-report/
