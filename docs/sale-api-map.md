@@ -9,6 +9,7 @@ Reference for every route under `/api/sale/*` and the /sale admin page. Updated 
 | GET  | `/api/sale/live-sessions` | List shop's live sessions. Paginated. | OWNER / MANAGER / CHAT_SUPPORT | — |
 | GET  | `/api/sale/live-sessions/[liveSessionId]/broadcast-products` | BroadcastProduct rows for one session with variant + product + stock. | OWNER / MANAGER / CHAT_SUPPORT | — |
 | GET  | `/api/sale/bookings?liveSessionId=…` | Booking queue for one session. `liveSessionId` required. | OWNER / MANAGER / CHAT_SUPPORT | — |
+| GET  | `/api/sale/customers/search?q=…&limit=…` | Minimal PII-safe customer lookup for Manual Create. Returns only customerId / name / phone / email / isBanned / orderCount. | OWNER / MANAGER / CHAT_SUPPORT | — |
 | POST | `/api/sale/bookings` | Manual booking create. `status: PENDING_REVIEW | CONFIRMED`. | OWNER / MANAGER | shared IP bucket |
 | POST | `/api/sale/bookings/[bookingId]/confirm` | Confirm a PENDING_REVIEW booking + reserve stock. | OWNER / MANAGER | shared IP bucket |
 | POST | `/api/sale/bookings/[bookingId]/cancel` | Cancel/expire booking + release stock. | OWNER / MANAGER | shared IP bucket |
@@ -94,7 +95,7 @@ Six panels (each wrapped in `ErrorBoundarySection`) + four dialog surfaces:
 | Booking row Confirm action | POST /api/sale/bookings/[id]/confirm | 2O-a |
 | Booking row Cancel action | POST /api/sale/bookings/[id]/cancel | 2O-b |
 | Booking row Select + Create Order | POST /api/sale/orders/from-bookings | 2O-c2 |
-| Manual Create dialog (customer search) | GET /api/customers?search= (existing admin route reused) | Manual Create Phase 3 (2026-05-13) |
+| Manual Create dialog (customer search) | GET /api/sale/customers/search?q= (sale-scoped minimal PII route) | Push harden (2026-05-13) |
 | Manual Create dialog (submit) | POST /api/sale/bookings | Manual Create Phase 4 (2026-05-13) |
 | Customer Panel / ข้อมูลลูกค้า | GET /api/customers/[id] (existing admin route reused) | Customer Panel (2026-05-12) |
 | Inbox (Coming Soon) | static | future phase — see omnichannel discovery doc 2026-05-13 |
@@ -173,6 +174,7 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/sale          
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/live-sessions                                  # 401
 curl -sS -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/live-sessions/dummy/broadcast-products         # 401
 curl -sS -o /dev/null -w "%{http_code}\n" 'https://nazhahatyai.com/api/sale/bookings?liveSessionId=dummy'                 # 401
+curl -sS -o /dev/null -w "%{http_code}\n" 'https://nazhahatyai.com/api/sale/customers/search?q=ab'                        # 401
 
 # POST mutation auth gates (rate-limited — probe SPARINGLY, one shot each)
 curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/bookings                       -H "Content-Type: application/json" -d '{}'   # 401 within budget
@@ -181,7 +183,7 @@ curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sa
 curl -sS -X POST -o /dev/null -w "%{http_code}\n" https://nazhahatyai.com/api/sale/orders/from-bookings           -H "Content-Type: application/json" -d '{}'   # 401 within budget
 ```
 
-Total probe count = **13/13** when all pass: 6 baseline + 1 /sale + 3 sale GET + 3+1 POST.
+Total probe count = **14/14** when all pass: 6 baseline + 1 /sale + 4 sale GET (incl new customers/search) + 3+1 POST.
 
 Never call authenticated POSTs against production. Boss runs the [authenticated manual test checklist](superpowers/2026-05-12-sale-authenticated-manual-test-checklist.md) for production write-side validation.
 

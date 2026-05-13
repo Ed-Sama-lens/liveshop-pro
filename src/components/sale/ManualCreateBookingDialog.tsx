@@ -39,9 +39,11 @@ import {
  * ManualCreate). All POSTs confined to this module.
  *
  * Scope:
- * - Customer search reuses existing `/api/customers?search=` route.
- *   Read-only, shop-scoped, supports OR(name, phone, email)
- *   case-insensitive contains. Pagination defaults limit=20.
+ * - Customer search uses sale-scoped minimal route
+ *   `GET /api/sale/customers/search?q=&limit=` (Boss 2026-05-13 push
+ *   harden). Returns ONLY customerId / name / phone / email /
+ *   isBanned / orderCount — strictly minimum PII for the picker. See
+ *   route docstring for the full PII whitelist + forbidden-field list.
  * - Broadcast product picker filters the parent-supplied product
  *   array client-side by displayCode prefix. No new fetch.
  * - Status locked to PENDING_REVIEW. CONFIRMED status NOT exposed
@@ -51,8 +53,12 @@ import {
  *   — server-side stock check fires only on status=CONFIRMED, and we
  *   lock to PENDING_REVIEW here.
  * - idempotencyKey: crypto.randomUUID() (UUID v4, 36 chars; matches
- *   server regex `^[A-Za-z0-9_-]{8,128}$`). Generated on dialog open
- *   and re-generated on reset. Prevents double-click duplicate.
+ *   server regex `^[A-Za-z0-9_-]{8,128}$`). Generated once per manual-
+ *   create draft via lazy useState init. STABLE across retry — a 429
+ *   or 500 followed by re-submit reuses the same key so the server
+ *   replays idempotently rather than creating a second booking. Key
+ *   regenerates only when the modal closes + reopens (resetForm).
+ *   Boss 2026-05-13 push harden DoD §3.
  * - No customer-facing message. No platform integration.
  *
  * Error mapping (8 cases — mirrors Confirm/Cancel/CreateOrder pattern):
@@ -98,14 +104,16 @@ type CustomerSearchState =
 interface CustomerSearchResponseBody {
   success?: boolean;
   error?: string;
-  data?: ReadonlyArray<{
-    id?: string;
-    name?: string;
-    phone?: string | null;
-    email?: string | null;
-    isBanned?: boolean;
-    _count?: { orders?: number };
-  }>;
+  data?: {
+    customers?: ReadonlyArray<{
+      customerId?: string;
+      name?: string;
+      phone?: string | null;
+      email?: string | null;
+      isBanned?: boolean;
+      orderCount?: number;
+    }>;
+  };
 }
 
 interface InlineError {
@@ -206,10 +214,16 @@ export function ManualCreateBookingDialog({
   const [quantity, setQuantity] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<InlineError | null>(null);
-  // idempotencyKey generated lazily on first mount + on reset. The same
-  // key is reused for retries within a single open session so a 429-then-
-  // success retry doesn't create a duplicate booking. Regenerated when
-  // the dialog closes + reopens via resetForm().
+  // idempotencyKey lifecycle (Boss 2026-05-13 push harden DoD §3):
+  // - generated ONCE per manual-create draft (lazy useState init below)
+  // - reused across every retry inside that draft (handleSubmit reads
+  //   from state — it does NOT call makeIdempotencyKey()), so 429 /
+  //   500 / network-fail retries replay the same key and the server
+  //   responds idempotent on the second hit
+  // - regenerated only when the modal closes + reopens (resetForm
+  //   below). Selected customer / product / quantity changes inside the
+  //   same open modal do NOT regenerate the key — they belong to the
+  //   same draft.
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
     makeIdempotencyKey()
   );
@@ -240,7 +254,11 @@ export function ManualCreateBookingDialog({
       setCustomerSearchState({ kind: 'loading' });
       (async () => {
         try {
-          const url = `/api/customers?search=${encodeURIComponent(term)}&limit=20`;
+          // Minimal PII-safe sale-scoped search endpoint (Boss
+          // 2026-05-13 push harden). Returns only customerId / name /
+          // phone / email / isBanned / orderCount. See route + tests
+          // at src/app/api/sale/customers/search/route.ts.
+          const url = `/api/sale/customers/search?q=${encodeURIComponent(term)}&limit=20`;
           const res = await fetch(url, {
             method: 'GET',
             credentials: 'same-origin',
@@ -252,21 +270,22 @@ export function ManualCreateBookingDialog({
             body = null;
           }
           if (cancelled) return;
-          if (!res.ok || body?.success !== true || !Array.isArray(body.data)) {
+          const list = body?.data?.customers;
+          if (!res.ok || body?.success !== true || !Array.isArray(list)) {
             setCustomerSearchState({
               kind: 'error',
               message: body?.error ?? `HTTP ${res.status}`,
             });
             return;
           }
-          const hits: CustomerSearchHit[] = body.data.map((raw) => ({
-            id: String(raw.id ?? ''),
+          const hits: CustomerSearchHit[] = list.map((raw) => ({
+            id: String(raw.customerId ?? ''),
             name: String(raw.name ?? '—'),
             phone: raw.phone ?? null,
             email: raw.email ?? null,
             isBanned: raw.isBanned === true,
             orderCount:
-              typeof raw._count?.orders === 'number' ? raw._count.orders : 0,
+              typeof raw.orderCount === 'number' ? raw.orderCount : 0,
           }));
           setCustomerSearchState({ kind: 'ready', hits });
         } catch (err) {
@@ -318,6 +337,11 @@ export function ManualCreateBookingDialog({
     setInlineError(null);
     setIsSubmitting(true);
     try {
+      // POST body invariants (Boss 2026-05-13 push harden DoD §3 + §4):
+      // - status is HARD-CODED 'PENDING_REVIEW'; CONFIRMED never sent
+      //   from this UI even though server accepts it.
+      // - idempotencyKey read from component state — same value every
+      //   retry inside this draft. Do NOT call makeIdempotencyKey() here.
       const res = await fetch('/api/sale/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -70,3 +70,26 @@ export const saleBookingsQuerySchema = z.object({
 });
 
 export type SaleBookingsQuery = z.infer<typeof saleBookingsQuerySchema>;
+
+// ─── GET /api/sale/customers/search (Manual Create harden) ────────────────
+//
+// Minimal PII-safe customer lookup for the Manual Create dialog. Replaces
+// the previous reuse of `/api/customers?search=` which returned the full
+// CustomerRow shape including address / labels / notes / channel /
+// facebookId / bannedReason / timestamps. Manual Create UI only needs
+// 6 fields; the route returns only those.
+//
+// Capped limit at 20 (vs admin /api/customers max 100) — the dialog only
+// renders a typeahead dropdown; larger pages don't help admin and only
+// expand the PII surface unnecessarily.
+
+export const saleCustomerSearchQuerySchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(2, 'q must be at least 2 characters')
+    .max(128, 'q is too long'),
+  limit: z.coerce.number().int().min(1).max(20).default(20),
+});
+
+export type SaleCustomerSearchQuery = z.infer<typeof saleCustomerSearchQuerySchema>;
