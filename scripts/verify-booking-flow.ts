@@ -308,6 +308,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBP,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant,
@@ -319,6 +320,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBPCrossShop,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,           // valid Shop A product
         variantId: idVariant2,           // CORRUPTED: variant from Shop B
