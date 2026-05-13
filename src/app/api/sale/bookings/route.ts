@@ -77,16 +77,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         broadcastProductId,
         quantity,
         status,
+        source,
         idempotencyKey,
       } = bodyResult.data;
 
+      // PR 2 AR-2: liveSessionId is optional in schema. Repository
+      // gates the non-live path behind ALLOW_NON_LIVE_BOOKING. When
+      // null/undefined, repository will throw if flag is off, mapped
+      // to 400 via toAppError.
       const result = await bookingRepository.createManual({
         shopId: user.shopId,
-        liveSessionId,
+        ...(liveSessionId !== undefined ? { liveSessionId } : {}),
         customerId,
         broadcastProductId,
         quantity,
         status,
+        ...(source !== undefined ? { source } : {}),
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
         changedById: user.id,
       });
@@ -107,7 +113,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           entityId: result.bookingId,
           description: `Booking ${result.bookingId} ${action.toLowerCase()} (qty ${result.quantity})`,
           metadata: {
-            liveSessionId,
+            liveSessionId: liveSessionId ?? null,
             customerId,
             broadcastProductId,
             quantity: result.quantity,
@@ -126,7 +132,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           unitPrice: formatMoney2(result.unitPrice),
           broadcastProductId,
           customerId,
-          liveSessionId,
+          liveSessionId: liveSessionId ?? null,
           idempotent: result.idempotent,
           reservation:
             result.reservationId !== null ? { id: result.reservationId } : null,

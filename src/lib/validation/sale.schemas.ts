@@ -19,17 +19,50 @@ import { z } from 'zod';
  */
 const MAX_BOOKINGS_PER_CONVERSION = 100;
 
-export const createOrderFromBookingsBodySchema = z.object({
-  liveSessionId: z.string().min(1, 'liveSessionId is required'),
-  customerId: z.string().min(1, 'customerId is required'),
-  bookingIds: z
-    .array(z.string().min(1, 'bookingId must be non-empty'))
-    .min(1, 'bookingIds must contain at least one booking ID')
-    .max(
-      MAX_BOOKINGS_PER_CONVERSION,
-      `bookingIds may contain at most ${MAX_BOOKINGS_PER_CONVERSION} entries`
-    ),
-});
+/**
+ * Conversion request body. PR 2 AR-3 introduces V2 bookingIds-only
+ * path that coexists with V1 legacy path. Per Q-15, the simplest
+ * readable shape is a single schema with refine():
+ * - V1 legacy: liveSessionId + customerId + bookingIds (all required)
+ * - V2 omnichannel: bookingIds only (liveSessionId + customerId omitted)
+ *
+ * The route handler dispatches based on which fields are present.
+ * Repository validates feature-flag gating + tenant scoping.
+ */
+export const createOrderFromBookingsBodySchema = z
+  .object({
+    liveSessionId: z
+      .string()
+      .min(1, 'liveSessionId must be non-empty when provided')
+      .optional(),
+    customerId: z
+      .string()
+      .min(1, 'customerId must be non-empty when provided')
+      .optional(),
+    bookingIds: z
+      .array(z.string().min(1, 'bookingId must be non-empty'))
+      .min(1, 'bookingIds must contain at least one booking ID')
+      .max(
+        MAX_BOOKINGS_PER_CONVERSION,
+        `bookingIds may contain at most ${MAX_BOOKINGS_PER_CONVERSION} entries`
+      ),
+  })
+  .refine(
+    (data) => {
+      // V1 legacy: both liveSessionId + customerId provided
+      const hasLegacy =
+        typeof data.liveSessionId === 'string' && typeof data.customerId === 'string';
+      // V2 omnichannel: neither provided (route flag-gated separately)
+      const hasV2 =
+        data.liveSessionId === undefined && data.customerId === undefined;
+      return hasLegacy || hasV2;
+    },
+    {
+      message:
+        'Provide either (liveSessionId + customerId) for V1 legacy or omit both for V2 bookingIds-only path',
+      path: ['liveSessionId'],
+    }
+  );
 
 export type CreateOrderFromBookingsBody = z.infer<typeof createOrderFromBookingsBodySchema>;
 

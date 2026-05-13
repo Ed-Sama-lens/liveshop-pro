@@ -52,10 +52,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const { liveSessionId, customerId, bookingIds } = bodyResult.data;
 
+      // PR 2 AR-3: V1 legacy path requires liveSessionId + customerId;
+      // V2 omnichannel path requires neither (only bookingIds). Schema
+      // refine() enforces "either both or neither". Pass only what was
+      // provided so repository dispatcher routes correctly. Repository
+      // gates V2 behind ALLOW_BOOKINGIDS_ONLY_CONVERSION flag.
       const result = await bookingRepository.convertToOrder({
         shopId: user.shopId,
-        liveSessionId,
-        customerId,
+        ...(liveSessionId !== undefined ? { liveSessionId } : {}),
+        ...(customerId !== undefined ? { customerId } : {}),
         changedById: user.id,
         bookingIds,
       });
@@ -77,8 +82,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             bookingCount: result.bookingCount,
             bookingIds: [...result.bookingIds],
             totalAmount: result.totalAmount,
-            liveSessionId,
-            customerId,
+            liveSessionId: liveSessionId ?? null,
+            customerId: customerId ?? null,
+            conversionPath: liveSessionId !== undefined ? 'v1' : 'v2',
           },
         }).catch(() => {});
       }
