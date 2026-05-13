@@ -539,3 +539,41 @@ export function buildConversionIdempotencyKey(input: {
   const hash = createHash('sha256').update(sorted.join(',')).digest('hex').slice(0, 16);
   return `sale-conv:${input.shopId}:${input.liveSessionId}:${input.customerId}:${hash}`;
 }
+
+/**
+ * Pure: deterministic idempotency key for omnichannel booking → order
+ * conversion (Boss decision Q-5 / migration plan AR-3).
+ *
+ * V2 namespace — does NOT include liveSessionId. Designed for the
+ * bookingIds-only conversion path that supports non-live sources
+ * (Messenger inbox / post comment / manual / Telegram / WhatsApp).
+ *
+ * Format:
+ *   sale-conv:v2:{shopId}:{customerId}:{sortedBookingIdsHash16}
+ *
+ * Coexistence with v1:
+ * - v1 keys (`sale-conv:{shopId}:{liveSessionId}:{customerId}:{hash}`)
+ *   remain valid on existing Orders. Legacy live-only callers keep
+ *   using v1.
+ * - v2 keys cannot collide with v1 because the v2 prefix differs
+ *   (`sale-conv:v2:` vs `sale-conv:`).
+ * - If a customer + same bookingIds are converted via both paths
+ *   (extremely rare admin race), each path creates its own Order
+ *   keyed by its own namespace; Order.idempotencyKey @unique prevents
+ *   duplicate within either namespace, and the repository
+ *   first-write-wins logic returns whichever Order exists first on
+ *   replay.
+ *
+ * Sorting normalizes input order so two clicks with the same booking
+ * set produce the same key — same idempotent collision protection
+ * as v1.
+ */
+export function buildConversionIdempotencyKeyV2(input: {
+  readonly shopId: string;
+  readonly customerId: string;
+  readonly bookingIds: readonly string[];
+}): string {
+  const sorted = [...input.bookingIds].sort();
+  const hash = createHash('sha256').update(sorted.join(',')).digest('hex').slice(0, 16);
+  return `sale-conv:v2:${input.shopId}:${input.customerId}:${hash}`;
+}
