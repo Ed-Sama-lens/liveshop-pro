@@ -3,6 +3,7 @@ import {
   NO_EXPIRY_SENTINEL,
   BOOKING_ERROR_CODES,
   buildConversionIdempotencyKey,
+  buildConversionIdempotencyKeyV2,
   canTransitionBookingStatus,
   computeAvailable,
   computeOrderTotals,
@@ -646,5 +647,83 @@ describe('buildConversionIdempotencyKey', () => {
     const k = buildConversionIdempotencyKey({ ...baseInput, bookingIds: ['x'] });
     const hash = k.split(':').pop()!;
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('buildConversionIdempotencyKeyV2', () => {
+  const baseInput = Object.freeze({
+    shopId: 'shop_a',
+    customerId: 'cust_c',
+  });
+
+  it('produces deterministic key for same inputs', () => {
+    const k1 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x', 'y'] });
+    expect(k1).toBe(k2);
+  });
+
+  it('booking ID order does not affect key (sorted internally)', () => {
+    const k1 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['y', 'x'] });
+    expect(k1).toBe(k2);
+  });
+
+  it('different booking sets produce different keys', () => {
+    const k1 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x', 'y'] });
+    const k2 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x', 'z'] });
+    expect(k1).not.toBe(k2);
+  });
+
+  it('different shop produces different key', () => {
+    const k1 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x'] });
+    const k2 = buildConversionIdempotencyKeyV2({
+      ...baseInput,
+      shopId: 'shop_other',
+      bookingIds: ['x'],
+    });
+    expect(k1).not.toBe(k2);
+  });
+
+  it('different customer produces different key', () => {
+    const k1 = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x'] });
+    const k2 = buildConversionIdempotencyKeyV2({
+      ...baseInput,
+      customerId: 'cust_other',
+      bookingIds: ['x'],
+    });
+    expect(k1).not.toBe(k2);
+  });
+
+  it('uses sale-conv:v2: prefix and contains shop/customer (no liveSessionId)', () => {
+    const k = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x'] });
+    expect(k.startsWith('sale-conv:v2:')).toBe(true);
+    expect(k).toContain('shop_a');
+    expect(k).toContain('cust_c');
+    expect(k).not.toContain('live_'); // no live session in v2
+  });
+
+  it('hash suffix is 16 hex chars', () => {
+    const k = buildConversionIdempotencyKeyV2({ ...baseInput, bookingIds: ['x'] });
+    const hash = k.split(':').pop()!;
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('v1 and v2 namespaces cannot collide on same inputs', () => {
+    // Even if v1 had liveSessionId='' empty, v2 prefix differs
+    const v1 = buildConversionIdempotencyKey({
+      shopId: 'shop_a',
+      liveSessionId: '',
+      customerId: 'cust_c',
+      bookingIds: ['x'],
+    });
+    const v2 = buildConversionIdempotencyKeyV2({
+      shopId: 'shop_a',
+      customerId: 'cust_c',
+      bookingIds: ['x'],
+    });
+    expect(v1).not.toBe(v2);
+    expect(v1.startsWith('sale-conv:')).toBe(true);
+    expect(v1.startsWith('sale-conv:v2:')).toBe(false);
+    expect(v2.startsWith('sale-conv:v2:')).toBe(true);
   });
 });
