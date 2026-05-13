@@ -125,6 +125,7 @@ model Shop {
   channelIdentities  ChannelIdentity[]
   messages           Message[]
   bookings           Booking[]
+  broadcastProducts  BroadcastProduct[]
 
   @@index([facebookPageId])
   @@index([slug])
@@ -896,7 +897,8 @@ model CommentParseLog {
 
 model BroadcastProduct {
   id            String   @id @default(cuid())
-  liveSessionId String
+  shopId        String
+  liveSessionId String?
   productId     String
   variantId     String?
   displayCode   String
@@ -906,13 +908,20 @@ model BroadcastProduct {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  liveSession LiveSession     @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  shop        Shop            @relation(fields: [shopId], references: [id])
+  liveSession LiveSession?    @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
   product     Product         @relation(fields: [productId], references: [id])
   variant     ProductVariant? @relation(fields: [variantId], references: [id])
 
   bookings Booking[]
 
   @@unique([liveSessionId, displayCode])
+  // Note: partial unique index on (shopId, displayCode) WHERE
+  // liveSessionId IS NULL is added via raw SQL inside the migration —
+  // Prisma does not generate WHERE clauses on unique indexes. The
+  // partial index enforces evergreen-code uniqueness per shop without
+  // colliding with live-bound rows.
+  @@index([shopId])
   @@index([liveSessionId, displayOrder])
   @@index([productId])
   @@index([variantId])
@@ -921,7 +930,7 @@ model BroadcastProduct {
 model Booking {
   id                 String        @id @default(cuid())
   shopId             String
-  liveSessionId      String
+  liveSessionId      String?
   broadcastProductId String
   customerId         String
   conversationId     String?
@@ -944,10 +953,10 @@ model Booking {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  shop             Shop             @relation(fields: [shopId], references: [id])
-  liveSession      LiveSession      @relation(fields: [liveSessionId], references: [id])
-  broadcastProduct BroadcastProduct @relation(fields: [broadcastProductId], references: [id])
-  customer         Customer         @relation(fields: [customerId], references: [id])
+  shop             Shop              @relation(fields: [shopId], references: [id])
+  liveSession      LiveSession?      @relation(fields: [liveSessionId], references: [id])
+  broadcastProduct BroadcastProduct  @relation(fields: [broadcastProductId], references: [id])
+  customer         Customer          @relation(fields: [customerId], references: [id])
   conversation     Conversation?    @relation(fields: [conversationId], references: [id])
   channelIdentity  ChannelIdentity? @relation(fields: [channelIdentityId], references: [id])
   sourceMessage    Message?         @relation(fields: [sourceMessageId], references: [id])
@@ -966,6 +975,7 @@ model Booking {
   @@index([conversationId])
   @@index([channelIdentityId])
   @@index([convertedOrderId])
+  @@index([shopId, source, status])
 }
 
 model BookingHistory {
