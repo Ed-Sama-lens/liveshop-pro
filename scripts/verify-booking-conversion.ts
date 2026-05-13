@@ -212,6 +212,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBP,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant,
@@ -221,6 +222,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBP2,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant2,

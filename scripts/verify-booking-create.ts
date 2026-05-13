@@ -294,6 +294,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBP,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant,
@@ -306,6 +307,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBPNoVariant,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: null,
@@ -317,6 +319,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBPCrossShop,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant2,
@@ -328,6 +331,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBPShop2,
+        shopId: idShop2,
         liveSessionId: idLiveSessionShop2,
         productId: idProduct2,
         variantId: idVariant2,
@@ -894,6 +898,7 @@ async function main(): Promise<void> {
     await prisma.broadcastProduct.create({
       data: {
         id: idBPOverride,
+        shopId: idShop,
         liveSessionId: idLiveSession,
         productId: idProduct,
         variantId: idVariant,

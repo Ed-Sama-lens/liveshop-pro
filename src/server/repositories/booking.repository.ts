@@ -1,10 +1,11 @@
-import { Prisma } from '@/generated/prisma';
+import { Prisma, BookingSource } from '@/generated/prisma';
 import { prisma } from '@/lib/db/prisma';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import {
   BOOKING_ERROR_CODES,
   NO_EXPIRY_SENTINEL,
   buildConversionIdempotencyKey,
+  buildConversionIdempotencyKeyV2,
   computeOrderTotals,
   groupBookingsForOrderItems,
   isAlreadyConfirmedIdempotent,
@@ -18,6 +19,11 @@ import {
   type CancelTargetStatus,
   type ConfirmedBookingSnapshot,
 } from '@/lib/sale/booking-rules';
+import {
+  allowBookingIdsOnlyConversion,
+  allowEvergreenBroadcastProduct,
+  allowNonLiveBooking,
+} from '@/lib/sale/feature-flags';
 
 /**
  * Booking repository — /sale Phase 1 manual MVP.
@@ -119,7 +125,14 @@ export interface ConvertBookingsToOrderResult {
  */
 export interface CreateManualBookingInput {
   readonly shopId: string;
-  readonly liveSessionId: string;
+  /**
+   * Optional after PR 2 (AR-2). When provided, booking is live-bound and
+   * BroadcastProduct must belong to the same LiveSession. When null /
+   * omitted, booking is non-live (omnichannel) — requires feature flag
+   * ALLOW_NON_LIVE_BOOKING and the BroadcastProduct must be evergreen
+   * (BP.liveSessionId IS NULL).
+   */
+  readonly liveSessionId?: string | null;
   readonly customerId: string;
   readonly broadcastProductId: string;
   readonly quantity: number;
@@ -130,6 +143,21 @@ export interface CreateManualBookingInput {
    *                      (rolls back entire booking if reserve fails)
    */
   readonly status: 'PENDING_REVIEW' | 'CONFIRMED';
+  /**
+   * Booking source. Defaults to MANUAL when omitted. For non-live
+   * bookings, source must be explicitly set (typically by trusted
+   * inbound runtime — future Phase O-1+). The /api/sale/bookings POST
+   * route defaults to MANUAL for admin-initiated calls.
+   */
+  readonly source?: BookingSource;
+  /**
+   * Optional source context references. Populated for inbound-derived
+   * bookings (LIVE_COMMENT / MESSENGER_INBOX / etc). Manual admin
+   * bookings leave these null.
+   */
+  readonly conversationId?: string | null;
+  readonly channelIdentityId?: string | null;
+  readonly sourceMessageId?: string | null;
   /**
    * Optional admin-supplied idempotency key. When present, repeated calls
    * with the same `(shopId, idempotencyKey)` return the existing booking
@@ -930,14 +958,40 @@ export const bookingRepository = Object.freeze({
   ): Promise<CreateManualBookingResult> {
     const {
       shopId,
-      liveSessionId,
+      liveSessionId: liveSessionIdInput,
       customerId,
       broadcastProductId,
       quantity,
       status,
+      source: sourceInput,
+      conversationId: conversationIdInput,
+      channelIdentityId: channelIdentityIdInput,
+      sourceMessageId: sourceMessageIdInput,
       idempotencyKey,
       changedById,
     } = input;
+
+    // Normalize: empty string → null. Treats omitted/null/empty the same.
+    const liveSessionId: string | null =
+      typeof liveSessionIdInput === 'string' && liveSessionIdInput.length > 0
+        ? liveSessionIdInput
+        : null;
+    const isNonLive = liveSessionId === null;
+
+    // PR 2 AR-2 feature flag gate. When flag is off, the route MUST
+    // require liveSessionId (defense-in-depth — repository refuses
+    // even if route validation slips). When flag is on, allow non-live
+    // path through.
+    if (isNonLive && !allowNonLiveBooking()) {
+      throw new ValidationError(
+        'Non-live bookings are not enabled. Set ALLOW_NON_LIVE_BOOKING=true to enable.',
+        { liveSessionId: ['required when ALLOW_NON_LIVE_BOOKING=false'] }
+      );
+    }
+
+    // Default source to MANUAL when caller omitted. Inbound runtimes
+    // (future) explicitly pass LIVE_COMMENT / MESSENGER_INBOX / etc.
+    const source: BookingSource = sourceInput ?? BookingSource.MANUAL;
 
     // ─── 1. Pure-input validation (no DB) ────────────────────────────
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
@@ -979,8 +1033,10 @@ export const bookingRepository = Object.freeze({
         },
       });
       if (existing) {
+        // Normalize null vs undefined comparison for liveSessionId
+        const existingLiveSession = existing.liveSessionId ?? null;
         const payloadMatches =
-          existing.liveSessionId === liveSessionId &&
+          existingLiveSession === liveSessionId &&
           existing.customerId === customerId &&
           existing.broadcastProductId === broadcastProductId &&
           existing.quantity === quantity;
@@ -1038,15 +1094,29 @@ export const bookingRepository = Object.freeze({
       throw new ConflictError('Customer is banned and cannot place bookings');
     }
 
-    // ─── 4. BroadcastProduct + LiveSession + Variant.product cross-shop check ─
+    // ─── 4. BroadcastProduct cross-shop + session-match check ────────
+    //
+    // Post-AR-1 schema: BroadcastProduct has its own shopId column so
+    // tenant scoping no longer depends on LiveSession traversal. This
+    // also enables evergreen (non-live) product codes which have
+    // liveSessionId = NULL but still belong to a shop.
+    //
+    // Lookup BP by id within shop. Then verify session-binding:
+    // - live booking (liveSessionId set):   BP.liveSessionId must equal
+    //                                        the input liveSessionId
+    // - non-live booking (liveSessionId null): BP must be evergreen
+    //                                          (BP.liveSessionId IS NULL)
+    //                                          AND the evergreen flag
+    //                                          must be enabled (defense
+    //                                          — route guards too).
     const bp = await prisma.broadcastProduct.findFirst({
-      where: { id: broadcastProductId, liveSessionId },
+      where: { id: broadcastProductId, shopId },
       select: {
         id: true,
+        shopId: true,
         liveSessionId: true,
         variantId: true,
         priceOverride: true,
-        liveSession: { select: { shopId: true } },
         variant: {
           select: {
             id: true,
@@ -1057,10 +1127,28 @@ export const bookingRepository = Object.freeze({
       },
     });
     if (!bp) {
-      throw new NotFoundError('BroadcastProduct not found for this live session');
+      throw new NotFoundError('BroadcastProduct not found for this shop');
     }
-    if (bp.liveSession.shopId !== shopId) {
-      throw new ConflictError('BroadcastProduct belongs to a different shop');
+    if (isNonLive) {
+      // Non-live path: BP must be evergreen
+      if (bp.liveSessionId !== null) {
+        throw new ConflictError(
+          'BroadcastProduct is bound to a live session; non-live booking cannot use a live-bound product code'
+        );
+      }
+      if (!allowEvergreenBroadcastProduct()) {
+        throw new ValidationError(
+          'Evergreen broadcast products are not enabled. Set ALLOW_EVERGREEN_BROADCAST_PRODUCT=true to use evergreen product codes.',
+          { broadcastProductId: ['requires ALLOW_EVERGREEN_BROADCAST_PRODUCT=true'] }
+        );
+      }
+    } else {
+      // Live path: BP must match the requested session
+      if (bp.liveSessionId !== liveSessionId) {
+        throw new ConflictError(
+          'BroadcastProduct does not belong to the requested live session'
+        );
+      }
     }
     if (!bp.variantId || !bp.variant) {
       throw new AppError(
@@ -1082,13 +1170,24 @@ export const bookingRepository = Object.freeze({
       const created = await tx.booking.create({
         data: {
           shopId,
+          // liveSessionId is now nullable per AR-2. Prisma handles null
+          // directly when the FK is optional.
           liveSessionId,
           customerId,
           broadcastProductId,
           quantity,
           unitPrice,
           status: 'PENDING_REVIEW',
-          source: 'MANUAL',
+          source,
+          ...(conversationIdInput !== undefined && conversationIdInput !== null
+            ? { conversationId: conversationIdInput }
+            : {}),
+          ...(channelIdentityIdInput !== undefined && channelIdentityIdInput !== null
+            ? { channelIdentityId: channelIdentityIdInput }
+            : {}),
+          ...(sourceMessageIdInput !== undefined && sourceMessageIdInput !== null
+            ? { sourceMessageId: sourceMessageIdInput }
+            : {}),
           ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
           createdById: changedById,
         },
