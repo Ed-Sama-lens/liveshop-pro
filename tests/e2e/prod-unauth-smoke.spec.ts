@@ -113,15 +113,26 @@ test.describe('production unauth smoke', () => {
     expect(typeof json?.csrfToken).toBe('string');
   });
 
-  // Known follow-up: /robots.txt currently redirects to sign-in via
-  // middleware matcher. Tracked separately in
-  // docs/superpowers/followups/2026-05-14-public-robots-middleware-gated.md.
-  // Spec asserts CURRENT behavior so the harness stays green; flip
-  // expected status to 200 (or 404) once fix/public-robots-middleware
-  // ships.
-  test('GET /robots.txt currently redirects (known follow-up)', async ({ request }) => {
-    const res = await request.get('/robots.txt', { maxRedirects: 0 });
-    expect([200, 307]).toContain(res.status());
+  // Post fix/public-robots-middleware (PR #8 merged 2026-05-15):
+  // /robots.txt is public 200 and returns the metadata-route response
+  // from src/app/robots.ts. /sitemap.xml has no metadata route yet so
+  // it returns 404 — middleware does NOT block it; route absence is
+  // the expected reason. Both probes go here so a regression in the
+  // PUBLIC_PATHS allowlist surfaces immediately.
+  test('GET /robots.txt is public (200)', async ({ request }) => {
+    const res = await request.get('/robots.txt');
+    expect(res.status()).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('User-Agent');
+    expect(body).toContain('Disallow');
+  });
+
+  test('GET /sitemap.xml is not gated (404 not 307)', async ({ request }) => {
+    const res = await request.get('/sitemap.xml', { maxRedirects: 0 });
+    // 404 because no metadata route exists yet; 200 acceptable once a
+    // src/app/sitemap.ts ships. 307 would indicate middleware
+    // regression and is the failure we guard against.
+    expect([200, 404]).toContain(res.status());
   });
 
   // Security headers sanity check on a representative redirect response.
