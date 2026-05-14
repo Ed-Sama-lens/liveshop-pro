@@ -289,7 +289,10 @@ export function SaleWorkspaceShell() {
           <SaleSessionPickerPlaceholder state={sessionState} />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
-          <SaleProductGridPlaceholder state={productState} />
+          <SaleProductGridPlaceholder
+            state={productState}
+            onProductCreated={() => setRefetchToken((n) => n + 1)}
+          />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
           <SaleBookingQueuePlaceholder
