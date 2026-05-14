@@ -50,12 +50,14 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
-        title="Product Codes / รหัสสินค้า"
-        subtitle="เลือกรอบไลฟ์ก่อนเพื่อดูสินค้า"
+        title="รหัสสินค้า / Product Codes"
+        subtitle="ยังไม่ได้เลือกรอบไลฟ์ — หรือยังไม่มีรอบไลฟ์ในระบบ"
         icon={Grid3x3}
         variant="placeholder"
       >
-        <p className="text-sm text-muted-foreground">รอเลือกรอบไลฟ์</p>
+        <p className="text-sm text-muted-foreground">
+          เมื่อเริ่มรอบไลฟ์ใหม่ รหัสสินค้าที่ตั้งไว้จะปรากฏที่นี่. การจัดการรหัสสินค้าแบบไม่ผูกรอบไลฟ์ (Add from Stock) จะมาในเฟสถัดไป.
+        </p>
       </SalePanelCard>
     );
   }
@@ -63,7 +65,7 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
   if (state.kind === 'loading') {
     return (
       <SalePanelCard
-        title="Product Codes / รหัสสินค้า"
+        title="รหัสสินค้า / Product Codes"
         subtitle="กำลังโหลดสินค้าของรอบไลฟ์"
         icon={Grid3x3}
         variant="live"
@@ -80,7 +82,7 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
   if (state.kind === 'error') {
     return (
       <SalePanelCard
-        title="Product Codes / รหัสสินค้า"
+        title="รหัสสินค้า / Product Codes"
         subtitle="โหลดข้อมูลไม่สำเร็จ"
         icon={Grid3x3}
         variant="live"
@@ -93,13 +95,13 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
   if (state.products.length === 0) {
     return (
       <SalePanelCard
-        title="Product Codes / รหัสสินค้า"
-        subtitle="ยังไม่มีสินค้าในรอบไลฟ์นี้"
+        title="รหัสสินค้า / Product Codes"
+        subtitle="ยังไม่มีรหัสสินค้าในรอบไลฟ์นี้"
         icon={Grid3x3}
         variant="live"
       >
         <p className="text-sm text-muted-foreground">
-          ยังไม่มี BroadcastProduct ในรอบไลฟ์นี้ — กลับไปตั้งค่าใน Live Selling
+          ตั้งค่ารหัสสินค้าของรอบนี้ใน Live Selling ก่อน. ในเฟสถัดไปจะมีหน้า Add from Stock สำหรับสร้างรหัสสินค้าโดยตรงในนี้.
         </p>
       </SalePanelCard>
     );
@@ -107,7 +109,7 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
 
   return (
     <SalePanelCard
-      title="Product Codes / รหัสสินค้า"
+      title="รหัสสินค้า / Product Codes"
       subtitle={`${state.products.length} ชิ้น ในรอบนี้`}
       icon={Grid3x3}
       variant="live"

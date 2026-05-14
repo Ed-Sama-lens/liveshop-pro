@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Construction } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorBoundarySection } from '@/components/ErrorBoundarySection';
 import {
@@ -19,6 +18,10 @@ import {
 import { SaleCustomerPanelPlaceholder } from './SaleCustomerPanelPlaceholder';
 import { SaleOrderConversionPlaceholder } from './SaleOrderConversionPlaceholder';
 import { SaleInboxPlaceholder } from './SaleInboxPlaceholder';
+import {
+  SaleSourceFilterChips,
+  type SourceFilterValue,
+} from './SaleSourceFilterChips';
 
 /**
  * /sale workspace shell (Commit 2S — wired to read-only APIs).
@@ -110,6 +113,16 @@ export function SaleWorkspaceShell() {
    */
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedCustomerNameHint, setSelectedCustomerNameHint] = useState<string | null>(null);
+
+  /**
+   * Tier 1 source filter. Local-only filter applied to the booking
+   * queue rendering. `'ALL'` shows everything. Filtering happens in
+   * memory; the GET fetch still pulls all bookings for the selected
+   * session (no server-side filter change). When the GET endpoint
+   * relaxes `liveSessionId` requirement in a follow-up, this filter
+   * becomes the primary classifier for the cross-source queue.
+   */
+  const [sourceFilter, setSourceFilter] = useState<SourceFilterValue>('ALL');
 
   // Fetch live sessions on mount.
   useEffect(() => {
@@ -227,32 +240,47 @@ export function SaleWorkspaceShell() {
     };
   }, [selectedId, refetchToken]);
 
+  /**
+   * Apply local source filter to the booking queue. `'ALL'` returns the
+   * raw fetch unchanged. Specific source value filters in memory. We do
+   * this client-side because the existing GET endpoint scopes by
+   * liveSessionId, not by source — but rows already carry `b.source` so
+   * a JS filter is correct and cheap at expected admin volumes (< 200
+   * rows per session per Phase 1).
+   */
+  const filteredBookingState: BookingState = useMemo(() => {
+    if (bookingState.kind !== 'ready') return bookingState;
+    if (sourceFilter === 'ALL') return bookingState;
+    return {
+      kind: 'ready',
+      liveSessionId: bookingState.liveSessionId,
+      bookings: bookingState.bookings.filter((b) => b.source === sourceFilter),
+    };
+  }, [bookingState, sourceFilter]);
+
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Live Sale / ขายผ่านไลฟ์</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          จัดการสินค้า จองสินค้า และสร้างออเดอร์จากไลฟ์
+      <header className="space-y-1">
+        <h1 className="text-2xl font-bold tracking-tight">ขายของไลฟ์สด</h1>
+        <p className="text-sm text-muted-foreground">
+          จัดการจองสินค้า คอมเมนต์ แชท และออเดอร์จากทุกช่องทาง
         </p>
       </header>
 
-      <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40">
-        <CardContent className="flex items-start gap-3 py-4">
-          <Construction
-            className="size-5 shrink-0 text-amber-600 dark:text-amber-400"
-            aria-hidden
-          />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              ระยะทดสอบ: 4 mutations พร้อมใช้ — Confirm + Cancel + Create Order + Manual Create
+      <Card>
+        <CardContent className="space-y-3 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              ตัวกรองตามแหล่งที่มา
             </p>
-            <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
-              Manual Create สร้าง booking ใหม่เป็น PENDING_REVIEW (ไม่ตัดสต็อก) แล้วค่อย Confirm.
-              MISSING/MULTIPLE integrity rows block Confirm/Cancel/Create Order.
-              Bulk Confirm ยังปิด. No customer-facing message sent. ใช้ test data เท่านั้นจนกว่า Boss
-              จะอนุมัติ smoke production.
+            <p className="text-[11px] text-muted-foreground/80">
+              ช่องทางที่ขีดทับ = เร็ว ๆ นี้ (รอ inbound runtime)
             </p>
           </div>
+          <SaleSourceFilterChips
+            value={sourceFilter}
+            onChange={setSourceFilter}
+          />
         </CardContent>
       </Card>
 
@@ -265,7 +293,7 @@ export function SaleWorkspaceShell() {
         </ErrorBoundarySection>
         <ErrorBoundarySection>
           <SaleBookingQueuePlaceholder
-            state={bookingState}
+            state={filteredBookingState}
             onMutationSuccess={() => setRefetchToken((n) => n + 1)}
             onCustomerSelected={(customerId, customerNameHint) => {
               setSelectedCustomerId(customerId);

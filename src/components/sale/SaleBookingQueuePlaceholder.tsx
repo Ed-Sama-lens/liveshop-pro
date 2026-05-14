@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
+import { BookingSourceChip } from './BookingSourceChip';
 import { ConfirmBookingDialog } from './ConfirmBookingDialog';
 import { CancelBookingDialog } from './CancelBookingDialog';
 import { CreateOrderDialog } from './CreateOrderDialog';
@@ -208,12 +209,14 @@ export function SaleBookingQueuePlaceholder({
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
-        title="Customer Bookings / รายการจอง"
-        subtitle="เลือกรอบไลฟ์ก่อนเพื่อดูรายการจอง"
+        title="รายการจอง / Bookings"
+        subtitle="ยังไม่ได้เลือกรอบไลฟ์ — หรือยังไม่มีรอบไลฟ์ในระบบ"
         icon={Users}
         variant="placeholder"
       >
-        <p className="text-sm text-muted-foreground">รอเลือกรอบไลฟ์</p>
+        <p className="text-sm text-muted-foreground">
+          รายการจองจาก ไลฟ์สด / Inbox / Post Comment / Manual / Telegram / WhatsApp จะปรากฏที่นี่. ตอนนี้ต้องเลือกรอบไลฟ์ก่อน เร็ว ๆ นี้จะรองรับมุมมองรวมทุกช่องทาง.
+        </p>
       </SalePanelCard>
     );
   }
@@ -221,7 +224,7 @@ export function SaleBookingQueuePlaceholder({
   if (state.kind === 'loading') {
     return (
       <SalePanelCard
-        title="Customer Bookings / รายการจอง"
+        title="รายการจอง / Bookings"
         subtitle="กำลังโหลดรายการจอง"
         icon={Users}
         variant="live"
@@ -238,7 +241,7 @@ export function SaleBookingQueuePlaceholder({
   if (state.kind === 'error') {
     return (
       <SalePanelCard
-        title="Customer Bookings / รายการจอง"
+        title="รายการจอง / Bookings"
         subtitle="โหลดข้อมูลไม่สำเร็จ"
         icon={Users}
         variant="live"
@@ -264,14 +267,14 @@ export function SaleBookingQueuePlaceholder({
   const isEmpty = state.bookings.length === 0;
   const selectedCount = selectedIds.size;
   const subtitle = isEmpty
-    ? 'ยังไม่มีรายการจอง — กดสร้าง booking เองด้านล่างเพื่อเริ่ม'
+    ? 'ยังไม่มีรายการจอง — กดปุ่ม “สร้างการจองด้วยตนเอง” ด้านล่างเพื่อเริ่ม'
     : selectedCount > 0
-      ? `${state.bookings.length} รายการ — เลือก ${selectedCount} (Create Order รอ 2O-c2)`
-      : `${state.bookings.length} รายการ (ใหม่ → เก่า) — Confirm + Cancel + Select พร้อมใช้`;
+      ? `${state.bookings.length} รายการ — เลือก ${selectedCount}`
+      : `${state.bookings.length} รายการ (ใหม่ → เก่า)`;
 
   return (
     <SalePanelCard
-      title="Customer Bookings / รายการจอง"
+      title="รายการจอง / Bookings"
       subtitle={subtitle}
       icon={Users}
       variant="live"
@@ -334,6 +337,7 @@ export function SaleBookingQueuePlaceholder({
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                   {b.displayCode ?? '?'}
                 </span>
+                <BookingSourceChip source={b.source} />
                 {onCustomerSelected ? (
                   <button
                     type="button"
