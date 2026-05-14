@@ -32,7 +32,7 @@ export const ROUTE_PERMISSIONS = [
   { prefix: '/bulk', roles: ['OWNER', 'MANAGER'] as UserRole[] },
 ] as const;
 
-export const PUBLIC_PATHS = ['/auth', '/api/auth', '/_next', '/favicon.ico', '/store', '/shop', '/unauthorized', '/privacy', '/terms', '/data-deletion'] as const;
+export const PUBLIC_PATHS = ['/auth', '/api/auth', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml', '/store', '/shop', '/unauthorized', '/privacy', '/terms', '/data-deletion'] as const;
 
 /**
  * Pure function — no side effects, returns boolean.
