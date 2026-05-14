@@ -59,3 +59,4 @@ tests/e2e/.auth/
 tests/e2e/screenshots/
 test-results/
 playwright-report/
+backups/
