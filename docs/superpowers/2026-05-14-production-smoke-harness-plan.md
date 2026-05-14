@@ -20,7 +20,7 @@ A Playwright spec captures the same probes in a single repeatable file. Boss + C
 
 In scope (this PR):
 
-- New `tests/e2e/prod-unauth-smoke.spec.ts` — 15 test cases covering the 13-probe baseline + 2 extras (security headers + robots.txt known-issue assertion).
+- New `tests/e2e/prod-unauth-smoke.spec.ts` — 16 test cases covering the 13-probe baseline + 3 extras (security headers + robots.txt strict 200 assertion + sitemap.xml not-gated assertion). robots.txt expectation reflects post-PR-#8 fix.
 - Reuses existing `playwright.prod-smoke.config.ts` (no config change).
 - Pure unauth — no storageState load, no auth, no mutation.
 
@@ -48,7 +48,8 @@ Out of scope:
 | 11 | `DELETE /api/sale/broadcast-products/[id]` | 401 |
 | 12 | `GET /api/storefront/<bogus>/products` | 404 not 500 |
 | 13 | `GET /api/auth/csrf` | 200 + JSON `{csrfToken: string}` |
-| 14 | `GET /robots.txt` | 200 or 307 (known follow-up) |
+| 14 | `GET /robots.txt` | 200 (User-Agent + Disallow body) |
+| 14b | `GET /sitemap.xml` | 200 or 404 (never 307 — regression guard) |
 | 15 | security headers on `/` | CSP + HSTS + Permissions + Referrer present |
 
 ## 4. Run command
@@ -71,7 +72,9 @@ No env vars required. Safe to run from any machine + at any time. No production 
 | 404 on `/api/auth/csrf` | next-auth wiring broken. Hotfix. |
 | 500 on `/api/storefront/<bogus>` | Storefront route handler doesn't validate slug. Hotfix. |
 | Missing CSP/HSTS headers | `next.config.ts` regression. Hotfix. |
-| Probe #14 flips from 307 → 200 | `/robots.txt` middleware fix shipped. Update expected status to 200 + bump known-issue comment. |
+| Probe #14 returns 307 | PUBLIC_PATHS allowlist regression — `/robots.txt` no longer in `src/lib/auth/permissions.ts`. Hotfix. |
+| Probe #14 body missing `Disallow` | `src/app/robots.ts` route regression. Hotfix. |
+| Probe #14b returns 307 | Same PUBLIC_PATHS regression as above but for `/sitemap.xml`. |
 
 ## 6. Maintenance
 
