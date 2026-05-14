@@ -56,3 +56,44 @@ export const listBroadcastProductsQuerySchema = z.object({
 });
 
 export type ListBroadcastProductsQuery = z.infer<typeof listBroadcastProductsQuerySchema>;
+
+/**
+ * PATCH body for `/api/sale/broadcast-products/[id]` (Tier 3.5).
+ *
+ * Only safe fields are editable:
+ * - `priceOverride` — decimal string with up to 2 places, OR explicit
+ *   null to clear an existing override (uses variant.price as fallback)
+ * - `isPinned` — boolean
+ * - `displayOrder` — int 0..9999
+ *
+ * Identity-bearing fields (`displayCode` / `variantId` / `liveSessionId`
+ * / `productId`) are intentionally NOT editable to preserve booking
+ * audit trail and uniqueness invariants.
+ *
+ * Empty body rejected by `.refine()` — at least one field required.
+ */
+export const updateBroadcastProductBodySchema = z
+  .object({
+    priceOverride: z
+      .union([
+        z.string().regex(PRICE_REGEX, 'priceOverride must be a decimal with up to 2 places'),
+        z.null(),
+      ])
+      .optional(),
+    isPinned: z.boolean().optional(),
+    displayOrder: z
+      .number()
+      .int('displayOrder must be an integer')
+      .min(0, 'displayOrder must be ≥ 0')
+      .max(9999, 'displayOrder must be ≤ 9999')
+      .optional(),
+  })
+  .refine(
+    (data) =>
+      data.priceOverride !== undefined ||
+      data.isPinned !== undefined ||
+      data.displayOrder !== undefined,
+    { message: 'At least one field must be provided', path: ['body'] }
+  );
+
+export type UpdateBroadcastProductBody = z.infer<typeof updateBroadcastProductBodySchema>;

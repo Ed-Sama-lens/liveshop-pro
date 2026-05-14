@@ -325,6 +325,154 @@ export const broadcastProductRepository = {
       .filter((r) => r.variant !== null) // belt-and-braces against orphan rows
       .map(toRow);
   },
+
+  /**
+   * Update a BroadcastProduct row. Only safe fields are editable:
+   *   - `priceOverride` (decimal string OR explicit null to clear)
+   *   - `isPinned` (boolean)
+   *   - `displayOrder` (int)
+   *
+   * Identity-bearing fields (`displayCode` / `variantId` / `liveSessionId`
+   * / `productId`) are intentionally NOT editable to preserve booking
+   * audit trail + uniqueness invariants.
+   *
+   * Cross-shop probe returns NotFoundError (404) — does NOT disclose
+   * existence in another shop.
+   *
+   * At least one field must be set in input; empty patch returns
+   * ValidationError (route layer enforces too, this is defense-in-depth).
+   */
+  async update(input: {
+    readonly shopId: string;
+    readonly id: string;
+    readonly priceOverride?: string | null;
+    readonly isPinned?: boolean;
+    readonly displayOrder?: number;
+  }): Promise<BroadcastProductRow> {
+    const { shopId, id, priceOverride, isPinned, displayOrder } = input;
+
+    // ─── 1. At-least-one-field check ─────────────────────────────────
+    if (
+      priceOverride === undefined &&
+      isPinned === undefined &&
+      displayOrder === undefined
+    ) {
+      throw new ValidationError('At least one field must be provided to update', {
+        body: ['empty patch not allowed'],
+      });
+    }
+
+    // ─── 2. priceOverride format check (null clears) ─────────────────
+    if (priceOverride !== undefined && priceOverride !== null) {
+      if (!/^\d+(\.\d{1,2})?$/.test(priceOverride)) {
+        throw new ValidationError('priceOverride must be a decimal with up to 2 places', {
+          priceOverride: ['invalid format'],
+        });
+      }
+    }
+
+    // ─── 3. displayOrder bounds ──────────────────────────────────────
+    if (displayOrder !== undefined) {
+      if (!Number.isInteger(displayOrder) || displayOrder < 0 || displayOrder > 9999) {
+        throw new ValidationError('displayOrder must be an integer between 0 and 9999', {
+          displayOrder: ['out of range'],
+        });
+      }
+    }
+
+    // ─── 4. Tenant scope check ───────────────────────────────────────
+    const existing = await prisma.broadcastProduct.findFirst({
+      where: { id, shopId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError('BroadcastProduct not found in this shop');
+    }
+
+    // ─── 5. Apply update ─────────────────────────────────────────────
+    const data: Prisma.BroadcastProductUpdateInput = {};
+    if (priceOverride !== undefined) data.priceOverride = priceOverride; // null clears
+    if (isPinned !== undefined) data.isPinned = isPinned;
+    if (displayOrder !== undefined) data.displayOrder = displayOrder;
+
+    const updated = await prisma.broadcastProduct.update({
+      where: { id },
+      data,
+      include: {
+        product: { select: { name: true, images: true } },
+        variant: {
+          select: {
+            id: true,
+            sku: true,
+            attributes: true,
+            price: true,
+            quantity: true,
+            reservedQty: true,
+          },
+        },
+      },
+    });
+    return toRow(updated);
+  },
+
+  /**
+   * Hard-delete a BroadcastProduct row. Blocked when any non-EXPIRED
+   * Booking references it (active history preservation).
+   *
+   * Cross-shop probe returns NotFoundError (404) — does NOT disclose
+   * existence in another shop.
+   *
+   * Throws:
+   * - NotFoundError 404 — row not in shop
+   * - ConflictError 409 — active bookings reference the row
+   */
+  async delete(input: {
+    readonly shopId: string;
+    readonly id: string;
+  }): Promise<{ id: string; deletedAt: Date }> {
+    const { shopId, id } = input;
+
+    // ─── 1. Tenant scope check ───────────────────────────────────────
+    const existing = await prisma.broadcastProduct.findFirst({
+      where: { id, shopId },
+      select: { id: true, displayCode: true },
+    });
+    if (!existing) {
+      throw new NotFoundError('BroadcastProduct not found in this shop');
+    }
+
+    // ─── 2. Active booking guard ─────────────────────────────────────
+    // EXPIRED bookings are excluded — they cannot reference live stock
+    // anymore. CANCELLED + CONVERTED_TO_ORDER bookings are still
+    // counted because their history points back to this BP for audit.
+    const activeCount = await prisma.booking.count({
+      where: {
+        broadcastProductId: id,
+        status: { not: 'EXPIRED' },
+      },
+    });
+    if (activeCount > 0) {
+      throw new ConflictError(
+        `Cannot delete: BroadcastProduct "${existing.displayCode}" is referenced by ${activeCount} active booking(s). Cancel or expire the bookings first.`
+      );
+    }
+
+    // ─── 3. Hard delete ──────────────────────────────────────────────
+    try {
+      await prisma.broadcastProduct.delete({ where: { id } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        // Race condition: a booking was created between the count
+        // and the delete. Surface as 409 so admin can retry.
+        throw new ConflictError(
+          'Delete failed due to race condition: a booking was created during the operation. Retry or check booking list.'
+        );
+      }
+      throw err;
+    }
+
+    return Object.freeze({ id, deletedAt: new Date() });
+  },
 };
 
 export type BroadcastProductRepository = typeof broadcastProductRepository;

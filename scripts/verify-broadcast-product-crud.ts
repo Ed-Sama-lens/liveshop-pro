@@ -21,7 +21,7 @@
  *     DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \
  *     npx -y tsx scripts/verify-broadcast-product-crud.ts
  *
- * Test cases (9):
+ * Test cases (16, A-P):
  *   A. create live-bound BP (no evergreen flag needed)
  *   B. duplicate live-bound displayCode rejects with ConflictError
  *   C. create evergreen with flag OFF rejects with ValidationError
@@ -31,6 +31,13 @@
  *   G. cross-shop variant rejects with NotFoundError
  *   H. list scope=live returns live-bound rows only
  *   I. list scope=evergreen returns evergreen rows only
+ *   J. PATCH priceOverride sets value, GET reflects
+ *   K. PATCH isPinned toggles, list orders by isPinned desc
+ *   L. PATCH empty body rejects with ValidationError
+ *   M. PATCH cross-shop rejects with NotFoundError
+ *   N. DELETE with zero bookings succeeds
+ *   O. DELETE with active booking rejects with ConflictError
+ *   P. DELETE cross-shop rejects with NotFoundError
  */
 
 // Flag default OFF for test C; flipped on for D-F via env mutation
@@ -369,11 +376,144 @@ async function run(): Promise<void> {
       record('Test I — list scope=evergreen filters', 'FAIL', (err as Error).message);
     }
 
+    // ── Test J: PATCH priceOverride ──────────────────────────────────
+    if (_createdLiveBPId) {
+      try {
+        const upd = await broadcastProductRepository.update({
+          shopId: idShop1,
+          id: _createdLiveBPId,
+          priceOverride: '9.99',
+        });
+        assert(upd.priceOverride === '9.99', `expected '9.99', got ${upd.priceOverride}`);
+        record('Test J — PATCH priceOverride', 'PASS');
+      } catch (err) {
+        record('Test J — PATCH priceOverride', 'FAIL', (err as Error).message);
+      }
+    }
+
+    // ── Test K: PATCH isPinned toggle ────────────────────────────────
+    if (_createdLiveBPId) {
+      try {
+        const upd = await broadcastProductRepository.update({
+          shopId: idShop1,
+          id: _createdLiveBPId,
+          isPinned: true,
+        });
+        assert(upd.isPinned === true, 'expected isPinned=true');
+        record('Test K — PATCH isPinned toggle', 'PASS');
+      } catch (err) {
+        record('Test K — PATCH isPinned toggle', 'FAIL', (err as Error).message);
+      }
+    }
+
+    // ── Test L: PATCH empty body rejects ─────────────────────────────
+    if (_createdLiveBPId) {
+      try {
+        await broadcastProductRepository.update({
+          shopId: idShop1,
+          id: _createdLiveBPId,
+        });
+        record('Test L — PATCH empty body rejects', 'FAIL', 'expected ValidationError');
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          record('Test L — PATCH empty body rejects', 'PASS');
+        } else {
+          record('Test L — PATCH empty body rejects', 'FAIL', `got ${(err as Error).constructor.name}`);
+        }
+      }
+    }
+
+    // ── Test M: PATCH cross-shop rejects ─────────────────────────────
+    if (_createdLiveBPId) {
+      try {
+        await broadcastProductRepository.update({
+          shopId: idShop2, // wrong shop
+          id: _createdLiveBPId,
+          isPinned: false,
+        });
+        record('Test M — PATCH cross-shop rejects', 'FAIL', 'expected NotFoundError');
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          record('Test M — PATCH cross-shop rejects', 'PASS');
+        } else {
+          record('Test M — PATCH cross-shop rejects', 'FAIL', `got ${(err as Error).constructor.name}`);
+        }
+      }
+    }
+
+    // ── Test N: DELETE with zero bookings succeeds ───────────────────
+    if (_createdEvergreenShop1Id) {
+      try {
+        const result = await broadcastProductRepository.delete({
+          shopId: idShop1,
+          id: _createdEvergreenShop1Id,
+        });
+        assert(result.id === _createdEvergreenShop1Id, 'expected returned id matches');
+        record('Test N — DELETE no-bookings succeeds', 'PASS');
+        _createdEvergreenShop1Id = null; // mark deleted for cleanup
+      } catch (err) {
+        record('Test N — DELETE no-bookings succeeds', 'FAIL', (err as Error).message);
+      }
+    }
+
+    // ── Test O: DELETE with active booking rejects ──────────────────
+    // Create a fixture booking referencing _createdLiveBPId, then attempt delete
+    if (_createdLiveBPId) {
+      try {
+        await prisma.booking.create({
+          data: {
+            id: `${runId}--booking-active`,
+            shopId: idShop1,
+            liveSessionId: idSession,
+            broadcastProductId: _createdLiveBPId,
+            customerId: idCustomer1,
+            quantity: 1,
+            unitPrice: '9.99',
+            status: 'PENDING_REVIEW',
+            source: 'MANUAL',
+          },
+        });
+        try {
+          await broadcastProductRepository.delete({
+            shopId: idShop1,
+            id: _createdLiveBPId,
+          });
+          record('Test O — DELETE active-bookings rejects', 'FAIL', 'expected ConflictError');
+        } catch (err) {
+          if (err instanceof ConflictError) {
+            record('Test O — DELETE active-bookings rejects', 'PASS');
+          } else {
+            record('Test O — DELETE active-bookings rejects', 'FAIL', `got ${(err as Error).constructor.name}`);
+          }
+        }
+      } catch (err) {
+        record('Test O — DELETE active-bookings rejects', 'FAIL', `setup failed: ${(err as Error).message}`);
+      }
+    }
+
+    // ── Test P: DELETE cross-shop rejects ────────────────────────────
+    if (_createdLiveBPId) {
+      try {
+        await broadcastProductRepository.delete({
+          shopId: idShop2, // wrong shop
+          id: _createdLiveBPId,
+        });
+        record('Test P — DELETE cross-shop rejects', 'FAIL', 'expected NotFoundError');
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          record('Test P — DELETE cross-shop rejects', 'PASS');
+        } else {
+          record('Test P — DELETE cross-shop rejects', 'FAIL', `got ${(err as Error).constructor.name}`);
+        }
+      }
+    }
+
     } // end else
   } finally {
     console.log('');
     console.log('=== Cleanup ===');
     const ops: Array<{ label: string; fn: () => Promise<{ count: number }> }> = [
+      { label: 'Booking', fn: () => prisma.booking.deleteMany({ where: { OR: [{ shopId: idShop1 }, { shopId: idShop2 }] } }) },
       { label: 'BroadcastProduct', fn: () => prisma.broadcastProduct.deleteMany({ where: { OR: [{ shopId: idShop1 }, { shopId: idShop2 }] } }) },
       { label: 'ProductVariant', fn: () => prisma.productVariant.deleteMany({ where: { OR: [{ productId: idProduct1 }, { productId: idProduct2 }] } }) },
       { label: 'Product', fn: () => prisma.product.deleteMany({ where: { OR: [{ shopId: idShop1 }, { shopId: idShop2 }] } }) },

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createBroadcastProductBodySchema,
   listBroadcastProductsQuerySchema,
+  updateBroadcastProductBodySchema,
 } from '@/lib/validation/broadcast-product.schemas';
 
 describe('createBroadcastProductBodySchema', () => {
@@ -163,6 +164,103 @@ describe('listBroadcastProductsQuerySchema', () => {
   it('rejects q > 128 chars', () => {
     const result = listBroadcastProductsQuerySchema.safeParse({
       q: 'a'.repeat(129),
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('updateBroadcastProductBodySchema', () => {
+  it('accepts priceOverride string', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      priceOverride: '12.50',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts priceOverride null (clear override)', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      priceOverride: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts isPinned true', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      isPinned: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts isPinned false', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      isPinned: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts displayOrder integer', () => {
+    for (const order of [0, 1, 100, 9999]) {
+      const result = updateBroadcastProductBodySchema.safeParse({
+        displayOrder: order,
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('accepts multiple fields together', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      priceOverride: '5.00',
+      isPinned: true,
+      displayOrder: 1,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty body (no fields)', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects priceOverride with too many decimals', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      priceOverride: '12.555',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects priceOverride non-decimal', () => {
+    for (const price of ['abc', '-5', '$5', '5,00']) {
+      const result = updateBroadcastProductBodySchema.safeParse({
+        priceOverride: price,
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it('rejects displayOrder negative', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      displayOrder: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects displayOrder > 9999', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      displayOrder: 10000,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects displayOrder non-integer', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      displayOrder: 1.5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects isPinned non-boolean', () => {
+    const result = updateBroadcastProductBodySchema.safeParse({
+      isPinned: 'yes',
     });
     expect(result.success).toBe(false);
   });
