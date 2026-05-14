@@ -1,9 +1,9 @@
 'use client';
 
 import { Grid3x3, AlertTriangle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
+import { AddFromStockDialog } from './AddFromStockDialog';
 
 /**
  * Product code grid — wired to
@@ -44,9 +44,18 @@ export interface SaleProductGridProps {
          */
         readonly filteredInvalidCount?: number;
       };
+  /**
+   * Optional callback fired when a new BroadcastProduct is created via
+   * the Add from Stock dialog. Parent uses this to refetch the product
+   * grid. Tier 3 PR 4.
+   */
+  readonly onProductCreated?: () => void;
 }
 
-export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
+export function SaleProductGridPlaceholder({
+  state,
+  onProductCreated,
+}: SaleProductGridProps) {
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
@@ -101,8 +110,12 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
         variant="live"
       >
         <p className="text-sm text-muted-foreground">
-          ตั้งค่ารหัสสินค้าของรอบนี้ใน Live Selling ก่อน. ในเฟสถัดไปจะมีหน้า Add from Stock สำหรับสร้างรหัสสินค้าโดยตรงในนี้.
+          กดปุ่มด้านล่างเพื่อสร้างรหัสสินค้าจากคลัง (ProductVariant) ของร้าน. รหัสสินค้าจะผูกกับรอบไลฟ์ปัจจุบัน.
         </p>
+        <AddFromStockDialog
+          liveSessionId={state.liveSessionId}
+          onCreated={onProductCreated}
+        />
       </SalePanelCard>
     );
   }
@@ -168,9 +181,10 @@ export function SaleProductGridPlaceholder({ state }: SaleProductGridProps) {
           </span>
         </div>
       ) : null}
-      <Button variant="outline" size="sm" disabled className="w-full">
-        จองสินค้า — ยังไม่เปิดใช้งาน
-      </Button>
+      <AddFromStockDialog
+        liveSessionId={state.liveSessionId}
+        onCreated={onProductCreated}
+      />
     </SalePanelCard>
   );
 }
