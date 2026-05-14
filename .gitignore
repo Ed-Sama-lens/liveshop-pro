@@ -60,3 +60,9 @@ tests/e2e/screenshots/
 test-results/
 playwright-report/
 backups/
+
+# Local-only emergency ops scripts — never commit. See
+# docs/superpowers/2026-05-15-local-ops-scripts-policy.md.
+scripts/check-user-full.ts
+scripts/reset-admin-password.ts
+scripts/rotate-db-password.ts
