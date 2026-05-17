@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Radio, Settings2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorBoundarySection } from '@/components/ErrorBoundarySection';
 import {
@@ -258,13 +260,38 @@ export function SaleWorkspaceShell() {
     };
   }, [bookingState, sourceFilter]);
 
+  /**
+   * Render priority (Tier 1.5 unified workspace, Boss 2026-05-17 spec):
+   * 1. Header — title + omnichannel subtitle + admin escape link to /live-selling
+   * 2. Source filter card — chips for context
+   * 3. Primary row — Product Codes + Booking Queue (the two surfaces an
+   *    operator touches most often during a sale)
+   * 4. Secondary row — Customer + Order Conversion (per-row context)
+   * 5. Tertiary row — Live Sessions picker + Inbox placeholder (context
+   *    and coming-soon)
+   *
+   * Previous layout was a 6-card grid with all panels weighted equally,
+   * which buried the primary work (products + bookings) under context
+   * panels. New three-row hierarchy follows operator workflow:
+   * "pick what to sell → take a booking → close the customer/order".
+   */
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">ขายของไลฟ์สด</h1>
-        <p className="text-sm text-muted-foreground">
-          จัดการจองสินค้า คอมเมนต์ แชท และออเดอร์จากทุกช่องทาง
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight">ขายของไลฟ์สด</h1>
+          <p className="text-sm text-muted-foreground">
+            จัดการจองสินค้า คอมเมนต์ แชท และออเดอร์จากทุกช่องทาง
+          </p>
+        </div>
+        <Link
+          href="/live-selling"
+          title="จัดการรอบไลฟ์ (สร้าง / แก้ไข / ปิดรอบ)"
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          <Settings2 className="size-3.5" aria-hidden />
+          จัดการรอบไลฟ์
+        </Link>
       </header>
 
       <Card>
@@ -284,10 +311,10 @@ export function SaleWorkspaceShell() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <ErrorBoundarySection>
-          <SaleSessionPickerPlaceholder state={sessionState} />
-        </ErrorBoundarySection>
+      {/* Primary work surface — products + bookings.
+          Operators spend the most time here during a live sale, so these
+          two panels get the full row width on large screens. */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <ErrorBoundarySection>
           <SaleProductGridPlaceholder
             state={productState}
@@ -307,6 +334,11 @@ export function SaleWorkspaceShell() {
             }
           />
         </ErrorBoundarySection>
+      </div>
+
+      {/* Secondary surface — customer detail + order conversion.
+          These follow per-booking interactions; mid-priority. */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <ErrorBoundarySection>
           <SaleCustomerPanelPlaceholder
             selectedCustomerId={selectedCustomerId}
@@ -316,10 +348,26 @@ export function SaleWorkspaceShell() {
         <ErrorBoundarySection>
           <SaleOrderConversionPlaceholder />
         </ErrorBoundarySection>
-        <ErrorBoundarySection>
-          <SaleInboxPlaceholder />
-        </ErrorBoundarySection>
       </div>
+
+      {/* Tertiary surface — live session context + inbox.
+          Live session is now a context filter, not the universal root.
+          Inbox is coming-soon. Both collapse to the bottom so the page
+          stays useful when no live session is selected. */}
+      <details className="rounded-md border border-border">
+        <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/40">
+          <Radio className="size-3.5" aria-hidden />
+          บริบทเพิ่มเติม — รอบไลฟ์ปัจจุบัน + ช่องทางที่กำลังมา (Inbox / Messenger / Telegram / WhatsApp)
+        </summary>
+        <div className="grid gap-4 border-t border-border p-4 lg:grid-cols-2">
+          <ErrorBoundarySection>
+            <SaleSessionPickerPlaceholder state={sessionState} />
+          </ErrorBoundarySection>
+          <ErrorBoundarySection>
+            <SaleInboxPlaceholder />
+          </ErrorBoundarySection>
+        </div>
+      </details>
     </div>
   );
 }

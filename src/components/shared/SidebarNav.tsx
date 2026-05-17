@@ -71,12 +71,15 @@ export const NAV_GROUPS: readonly NavGroupDef[] = [
         icon: SearchCheck,
         roles: ['OWNER', 'MANAGER', 'WAREHOUSE'],
       },
-      {
-        labelKey: 'liveSelling',
-        href: '/live-selling',
-        icon: Radio,
-        roles: ['OWNER', 'MANAGER'],
-      },
+      // Unified sales workspace (Tier 1.5 — `feat/sale-unified-workspace`).
+      // Previously two entries: `liveSelling` → `/live-selling` (legacy
+      // LiveSession CRUD) and `liveSale` → `/sale` (V Rich-style MVP
+      // workspace). Collapsed to one omnichannel entry per Boss
+      // 2026-05-17 product decision: "one workspace for selling from
+      // live, inbox, page post comments, manual entry, future
+      // Telegram/WhatsApp". /live-selling routes stay accessible by
+      // direct URL for LiveSession admin (create/edit/list); operators
+      // reach it from inside /sale.
       {
         labelKey: 'liveSale',
         href: '/sale',
