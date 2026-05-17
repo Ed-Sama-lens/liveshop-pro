@@ -115,6 +115,7 @@ export async function GET(
         displayCode: true,
         displayOrder: true,
         priceOverride: true,
+        isPinned: true,
         productId: true,
         variantId: true,
         product: {
@@ -176,6 +177,7 @@ export async function GET(
           broadcastProductId: r.id,
           displayCode: r.displayCode,
           displayOrder: r.displayOrder,
+          isPinned: r.isPinned,
           productId: r.productId,
           productName: r.product.name,
           variantId: variant.id,

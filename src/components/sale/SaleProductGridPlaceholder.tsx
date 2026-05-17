@@ -1,9 +1,11 @@
 'use client';
 
-import { Grid3x3, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { Grid3x3, AlertTriangle, Pencil } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 import { AddFromStockDialog } from './AddFromStockDialog';
+import { EditProductCodeDialog } from './EditProductCodeDialog';
 
 /**
  * Product code grid — wired to
@@ -25,6 +27,13 @@ export interface SaleBroadcastProductRow {
   readonly reservedQty: number;
   readonly availableQty: number;
   readonly imageUrl: string | null;
+  /**
+   * Tier 3.6 — surfaces BroadcastProduct.isPinned for the edit dialog.
+   * Optional on the row because older API responses (Commit 2S) did
+   * not return it. EditProductCodeDialog handles undefined gracefully
+   * by treating it as false.
+   */
+  readonly isPinned?: boolean;
 }
 
 export interface SaleProductGridProps {
@@ -56,6 +65,15 @@ export function SaleProductGridPlaceholder({
   state,
   onProductCreated,
 }: SaleProductGridProps) {
+  /**
+   * Tier 3.6 — track which BP row is open in the EditProductCodeDialog.
+   * `null` = closed. `'ready'` state still mounts the component; other
+   * states have nothing to edit.
+   */
+  const [editTarget, setEditTarget] = useState<SaleBroadcastProductRow | null>(
+    null
+  );
+
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
@@ -132,9 +150,13 @@ export function SaleProductGridPlaceholder({
           const outOfStock = p.availableQty === 0;
           const lowStock = !outOfStock && p.availableQty <= 5;
           return (
-            <div
+            <button
               key={p.broadcastProductId}
-              className={`rounded-md border px-2 py-2 text-xs ${
+              type="button"
+              onClick={() => setEditTarget(p)}
+              title={`คลิกเพื่อแก้ไขรหัสสินค้า ${p.displayCode}`}
+              aria-label={`แก้ไขรหัสสินค้า ${p.displayCode}`}
+              className={`group relative rounded-md border px-2 py-2 text-left text-xs transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 outOfStock
                   ? 'border-red-300 bg-red-50 opacity-70 dark:border-red-800 dark:bg-red-950/30'
                   : lowStock
@@ -142,6 +164,10 @@ export function SaleProductGridPlaceholder({
                     : 'border-border'
               }`}
             >
+              <Pencil
+                className="absolute right-1 top-1 size-3 opacity-0 transition-opacity group-hover:opacity-60"
+                aria-hidden
+              />
               <p className="font-mono text-sm font-semibold">{p.displayCode}</p>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                 {p.productName}
@@ -161,10 +187,28 @@ export function SaleProductGridPlaceholder({
                   {outOfStock ? 'หมด' : `${p.availableQty} ชิ้น`}
                 </span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
+      {editTarget !== null && (
+        <EditProductCodeDialog
+          product={editTarget}
+          canDelete
+          open={editTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setEditTarget(null);
+          }}
+          onUpdated={() => {
+            setEditTarget(null);
+            onProductCreated?.();
+          }}
+          onDeleted={() => {
+            setEditTarget(null);
+            onProductCreated?.();
+          }}
+        />
+      )}
       {state.products.length > 12 ? (
         <p className="text-[11px] text-muted-foreground">
           แสดง 12 จาก {state.products.length} ชิ้น — ดูทั้งหมดในเฟสถัดไป
