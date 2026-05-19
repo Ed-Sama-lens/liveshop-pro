@@ -66,3 +66,12 @@ backups/
 scripts/check-user-full.ts
 scripts/reset-admin-password.ts
 scripts/rotate-db-password.ts
+
+# Transient one-off files used while drafting PRs / commit messages /
+# smoke probes. Never commit. See
+# docs/superpowers/2026-05-18-local-artifact-cleanup-policy.md.
+.pr-body-*
+.commit-msg.tmp
+tmp-*.sh
+tmp-*.ts
+tmp-*.json
