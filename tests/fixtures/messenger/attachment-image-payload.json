@@ -1,0 +1,31 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "time": 1747000000000,
+      "messaging": [
+        {
+          "sender": {
+            "id": "100000000000001"
+          },
+          "recipient": {
+            "id": "200000000000002"
+          },
+          "timestamp": 1747000000000,
+          "message": {
+            "mid": "m_FIXTURE_INBOX_ATTACH_000000000001",
+            "attachments": [
+              {
+                "type": "image",
+                "payload": {
+                  "url": "https://example.test/fixture-image.png"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
