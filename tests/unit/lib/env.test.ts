@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { z } from 'zod';
 
 // We test the envSchema shape directly using zod since the env singleton
 // is validated at module load time and cannot be re-evaluated in tests.
@@ -7,21 +8,19 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe('Environment validation', () => {
   it('throws when DATABASE_URL is missing', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     });
     const result = schema.safeParse({});
     expect(result.success).toBe(false);
     if (!result.success) {
-      const paths = result.error.issues.map((e: { path: string[] }) => e.path.join('.'));
+      const paths = result.error.issues.map((e) => e.path.map((p) => String(p)).join('.'));
       expect(paths).toContain('DATABASE_URL');
     }
   });
 
   it('throws with descriptive message listing missing DATABASE_URL and REDIS_URL', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
       REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
       NEXTAUTH_URL: z.string().url('NEXTAUTH_URL must be a valid URL'),
@@ -34,15 +33,14 @@ describe('Environment validation', () => {
     const result = schema.safeParse({});
     expect(result.success).toBe(false);
     if (!result.success) {
-      const paths = result.error.issues.map((e: { path: string[] }) => e.path.join('.'));
+      const paths = result.error.issues.map((e) => e.path.map((p) => String(p)).join('.'));
       expect(paths).toContain('DATABASE_URL');
       expect(paths).toContain('REDIS_URL');
     }
   });
 
   it('validates that DATABASE_URL is a non-empty string', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     });
     const result = schema.safeParse({ DATABASE_URL: '' });
@@ -53,15 +51,14 @@ describe('Environment validation', () => {
   });
 
   it('rejects invalid TOKEN_ENCRYPTION_KEY format — must be exactly 64 chars', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       TOKEN_ENCRYPTION_KEY: z.string().length(64, 'TOKEN_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
     });
     const result = schema.safeParse({ TOKEN_ENCRYPTION_KEY: 'not-valid-hex' });
     expect(result.success).toBe(false);
     if (!result.success) {
       const issue = result.error.issues.find(
-        (e: { path: string[] }) => e.path.includes('TOKEN_ENCRYPTION_KEY')
+        (e) => e.path.includes('TOKEN_ENCRYPTION_KEY')
       );
       expect(issue).toBeDefined();
       expect(issue?.message).toContain('64');
@@ -69,8 +66,7 @@ describe('Environment validation', () => {
   });
 
   it('coerces RATE_LIMIT_MAX string to number', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
     });
     const result = schema.safeParse({ RATE_LIMIT_MAX: '50' });
@@ -81,8 +77,7 @@ describe('Environment validation', () => {
   });
 
   it('accepts valid environment with all required fields', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       DATABASE_URL: z.string().min(1),
       REDIS_URL: z.string().min(1),
       NEXTAUTH_URL: z.string().url(),
@@ -106,8 +101,7 @@ describe('Environment validation', () => {
   });
 
   it('NEXTAUTH_SECRET must be at least 32 characters', () => {
-    const { z } = require('zod');
-    const schema = z.object({
+const schema = z.object({
       NEXTAUTH_SECRET: z.string().min(32, 'NEXTAUTH_SECRET must be at least 32 characters'),
     });
     const result = schema.safeParse({ NEXTAUTH_SECRET: 'short' });

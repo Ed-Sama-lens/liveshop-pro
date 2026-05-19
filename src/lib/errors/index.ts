@@ -37,10 +37,9 @@ export class AppError extends Error {
 
     // Trim the constructor frame from the stack on V8.
     if (typeof (Error as { captureStackTrace?: unknown }).captureStackTrace === 'function') {
-      (Error as { captureStackTrace: (target: object, ctor: Function) => void }).captureStackTrace(
-        this,
-        new.target
-      );
+      (Error as {
+        captureStackTrace: (target: object, ctor: new (...args: never[]) => unknown) => void;
+      }).captureStackTrace(this, new.target);
     }
   }
 }

@@ -25,6 +25,7 @@ export function LanguageSwitcher() {
 
   function switchLocale(newLocale: string) {
     if (newLocale === locale) return;
+    // eslint-disable-next-line react-hooks/immutability -- document.cookie setter is the canonical DOM cookie write; not a React state mutation
     document.cookie = `NEXT_LOCALE=${newLocale};path=/;max-age=31536000;SameSite=Lax`;
     window.location.reload();
   }
