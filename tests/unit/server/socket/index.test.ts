@@ -109,7 +109,13 @@ describe('emitToRoom()', () => {
 
     emitToRoom('shop-X', 'order:updated', { orderId: 'o-1', status: 'confirmed' });
 
-    const roomArg = mockTo.mock.calls[0][0] as string;
+    // Use optional-chaining + `unknown` first per TS guidance: in strict
+    // mode, `mockTo.mock.calls` is typed as a tuple of `[]`, so direct
+    // index access trips TS2352 + TS2493. The runtime shape is the
+    // canonical `vi.fn` call record `[string, ...args[]][]`.
+    const firstCall = mockTo.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const roomArg = (firstCall as unknown as [string])[0];
     expect(roomArg).toBe('shop:shop-X');
     expect(roomArg).not.toBe('global');
     expect(roomArg).not.toBe('shop-X');
