@@ -1,0 +1,19 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "time": 1747000000000,
+      "messaging": [
+        {
+          "sender": "100000000000001",
+          "recipient": null,
+          "timestamp": "not-a-number",
+          "message": {
+            "text": 42
+          }
+        }
+      ]
+    }
+  ]
+}
