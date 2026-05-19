@@ -99,7 +99,7 @@ export async function fetchLiveComments(
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
     throw new Error(
-      `Facebook API error: ${(errorBody as any)?.error?.message ?? res.statusText}`
+      `Facebook API error: ${(errorBody as { error?: { message?: string } })?.error?.message ?? res.statusText}`
     );
   }
 
@@ -133,7 +133,7 @@ export async function exchangeForLongLivedToken(
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
     throw new Error(
-      `Token exchange failed: ${(errorBody as any)?.error?.message ?? res.statusText}`
+      `Token exchange failed: ${(errorBody as { error?: { message?: string } })?.error?.message ?? res.statusText}`
     );
   }
 
