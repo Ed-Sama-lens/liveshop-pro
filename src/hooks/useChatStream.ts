@@ -12,7 +12,11 @@ export function useChatStream(onUpdate: () => void) {
   const onUpdateRef = useRef(onUpdate);
 
   // Keep onUpdate ref fresh without re-triggering effect
-  onUpdateRef.current = onUpdate;
+  // Updated in an effect to satisfy react-hooks/refs-during-render
+  // (the canonical useLatest pattern). Behavior is unchanged.
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  });
 
   const startFallbackPolling = useCallback(() => {
     // Clear any existing fallback

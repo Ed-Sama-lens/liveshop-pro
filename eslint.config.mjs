@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated / vendor / coverage output — never lint these.
+    // All gitignored already; lint should match gitignore policy.
+    "coverage/**",
+    "src/generated/**",
+    "playwright-report/**",
+    "test-results/**",
+    "node_modules/**",
+    ".vercel/**",
   ]),
 ]);
 
