@@ -50,7 +50,7 @@ describe('buildCsv', () => {
       { key: 'a' as const, header: 'A' },
       { key: 'b' as const, header: 'B' },
     ];
-    const csv = buildCsv(rows as any, columns);
+    const csv = buildCsv(rows as unknown as Parameters<typeof buildCsv>[0], columns);
     const lines = csv.replace('\uFEFF', '').split('\r\n');
     expect(lines[1]).toBe(',');
   });

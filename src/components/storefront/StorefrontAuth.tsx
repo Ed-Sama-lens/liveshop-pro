@@ -6,6 +6,30 @@ import { LogIn, LogOut, User } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
+interface FacebookLoginResponse {
+  readonly authResponse?: {
+    readonly accessToken?: string;
+  } | null;
+}
+
+interface FacebookSDK {
+  init(config: {
+    appId: string;
+    cookie: boolean;
+    xfbml: boolean;
+    version: string;
+  }): void;
+  login(
+    callback: (response: FacebookLoginResponse) => void,
+    options: { scope: string }
+  ): void;
+}
+
+interface WindowWithFB extends Window {
+  fbAsyncInit?: () => void;
+  FB?: FacebookSDK;
+}
+
 interface StorefrontCustomer {
   readonly customerId: string;
   readonly customerName: string;
@@ -90,8 +114,8 @@ export function StorefrontAuthProvider({ shopId, facebookAppId, children }: Stor
     if (typeof window === 'undefined' || !facebookAppId) return;
     if (document.getElementById('facebook-jssdk')) return;
 
-    (window as any).fbAsyncInit = function () {
-      (window as any).FB.init({
+    (window as WindowWithFB).fbAsyncInit = function () {
+      (window as WindowWithFB).FB?.init({
         appId: facebookAppId,
         cookie: true,
         xfbml: false,
@@ -108,11 +132,11 @@ export function StorefrontAuthProvider({ shopId, facebookAppId, children }: Stor
   }, [facebookAppId]);
 
   const login = useCallback(() => {
-    const FB = (window as any).FB;
+    const FB = (window as WindowWithFB).FB;
     if (!FB) return;
 
     FB.login(
-      (response: any) => {
+      (response: FacebookLoginResponse) => {
         if (response.authResponse?.accessToken) {
           exchangeToken(shopId, response.authResponse.accessToken, setCustomer);
         }
