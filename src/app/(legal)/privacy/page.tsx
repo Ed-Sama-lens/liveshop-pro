@@ -89,7 +89,7 @@ export default function PrivacyPolicyPage() {
               rel="noopener noreferrer"
               className="text-blue-600 hover:underline"
             >
-              Facebook's Privacy Policy
+              Facebook&apos;s Privacy Policy
             </a>{' '}
             for information on how Facebook handles your data.
           </li>
@@ -204,7 +204,7 @@ export default function PrivacyPolicyPage() {
       </section>
 
       <section className="mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">8. Children's Privacy</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">8. Children&apos;s Privacy</h2>
         <p className="text-gray-700">
           Our services are not directed to children under the age of 13. We do not knowingly collect
           personal data from children under 13. If you believe we have inadvertently collected such
@@ -226,7 +226,7 @@ export default function PrivacyPolicyPage() {
         <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">10. Changes to This Policy</h2>
         <p className="text-gray-700">
           We may update this Privacy Policy from time to time. We will notify you of significant
-          changes by posting the new policy on this page with an updated "Last updated" date. Your
+          changes by posting the new policy on this page with an updated &quot;Last updated&quot; date. Your
           continued use of the service after changes constitutes acceptance of the updated policy.
         </p>
       </section>
