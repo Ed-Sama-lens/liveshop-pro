@@ -24,7 +24,10 @@
     "verify:booking-create": "tsx scripts/verify-booking-create.ts",
     "verify:order-reservation-cleanup": "tsx scripts/verify-order-reservation-cleanup.ts",
     "verify:expire-reservations-cron": "tsx scripts/verify-expire-reservations-cron.ts",
-    "verify:sale:d4-d6": "tsx scripts/verify-sale-d4-d6-functional-flow.ts"
+    "verify:sale:d4-d6": "tsx scripts/verify-sale-d4-d6-functional-flow.ts",
+    "check:types": "tsc --noEmit",
+    "test:sale:routes": "vitest run tests/unit/app/api/sale",
+    "test:sale:components": "vitest run tests/unit/components/sale tests/unit/components/shared/SidebarNav.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

@@ -1,0 +1,21 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "time": 1747000000000,
+      "messaging": [
+        {
+          "recipient": {
+            "id": "200000000000002"
+          },
+          "timestamp": 1747000000000,
+          "message": {
+            "mid": "m_FIXTURE_MISSING_SENDER_000000001",
+            "text": "Message arrived without sender object — fixture for reject path."
+          }
+        }
+      ]
+    }
+  ]
+}
