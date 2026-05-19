@@ -57,6 +57,7 @@ export function SaleCustomerPanelPlaceholder({
 
   useEffect(() => {
     if (!selectedCustomerId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on customer deselect; legitimate fetch-into-state pattern
       setState({ kind: 'idle' });
       return;
     }

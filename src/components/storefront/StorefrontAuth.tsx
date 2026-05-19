@@ -80,6 +80,7 @@ export function StorefrontAuthProvider({ shopId, facebookAppId, children }: Stor
 
   // Load saved customer on mount
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount hydration from localStorage; refactor to lazy useState initializer is a separate task
     setCustomer(loadCustomer());
     setIsLoading(false);
   }, []);

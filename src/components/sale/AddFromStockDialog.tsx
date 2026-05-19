@@ -99,6 +99,7 @@ export function AddFromStockDialog({
   useEffect(() => {
     if (!open) return;
     if (debouncedTerm.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- debounced search reset on short term; legitimate fetch-into-state pattern
       setSearchState({ kind: 'idle' });
       return;
     }

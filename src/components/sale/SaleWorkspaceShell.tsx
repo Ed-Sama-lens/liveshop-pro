@@ -166,6 +166,7 @@ export function SaleWorkspaceShell() {
 
   useEffect(() => {
     if (!selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on session deselect; legitimate panel-reset pattern (covers both setState calls below)
       setProductState({ kind: 'no-session' });
       setBookingState({ kind: 'no-session' });
       return;

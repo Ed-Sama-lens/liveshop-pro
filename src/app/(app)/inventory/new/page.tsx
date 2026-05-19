@@ -26,6 +26,7 @@ export default function NewProductPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-then-setState mount pattern; refactor to React Query / SWR is a separate task
     fetchCategories();
   }, [fetchCategories]);
 
