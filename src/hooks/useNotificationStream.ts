@@ -33,7 +33,7 @@ export function useNotificationStream() {
   }, [fetchCount]);
 
   useEffect(() => {
-    // Initial fetch
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch + SSE/poll fallback; setState reflects external async result, refactor TBD
     fetchCount();
 
     // Try SSE
