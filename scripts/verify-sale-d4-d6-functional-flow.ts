@@ -58,54 +58,26 @@ process.env.ALLOW_BOOKINGIDS_ONLY_CONVERSION = 'true';
 import { PrismaClient } from '../src/generated/prisma';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { bookingRepository } from '../src/server/repositories/booking.repository';
+import { evaluateNonProdDatabase } from './lib/non-prod-db-guard';
 
 // ─── Production safety guards ────────────────────────────────────────────
-
-const PROD_HOST_DENY_LIST = ['junction.proxy.rlwy.net', 'rlwy.net'] as const;
-const ALLOWED_LOCAL_HOSTS = ['localhost', '127.0.0.1'] as const;
-const REQUIRED_DB_NAME = 'liveshop_pro';
+//
+// Pure evaluator lives in scripts/lib/non-prod-db-guard.ts and is unit
+// tested at tests/unit/scripts/non-prod-db-guard.test.ts. This wrapper
+// adds the process.exit(2) + console error behavior required at the
+// CLI entry point.
 
 function assertNonProdDatabase(): { url: string; runId: string; sanitizedHost: string } {
-  if (process.env.CONFIRM_NON_PROD_DB !== 'true') {
-    console.error('[GUARD] Refusing to run: set CONFIRM_NON_PROD_DB=true.');
-    process.exit(2);
-  }
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error('[GUARD] Refusing to run: DATABASE_URL is not set.');
-    process.exit(2);
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch (err) {
-    console.error('[GUARD] Refusing to run: DATABASE_URL is not a valid URL.', err);
-    process.exit(2);
-  }
-  const sanitizedHost = parsed.hostname + ':' + (parsed.port || '5432');
-  const dbName = parsed.pathname.replace(/^\//, '');
-  for (const denied of PROD_HOST_DENY_LIST) {
-    if (parsed.hostname.includes(denied)) {
-      console.error(`[GUARD] Refusing to run: hostname looks like production (${denied}).`);
-      process.exit(2);
-    }
-  }
-  if (url.includes('nazhahatyai')) {
-    console.error('[GUARD] Refusing to run: DATABASE_URL contains "nazhahatyai".');
-    process.exit(2);
-  }
-  if (!ALLOWED_LOCAL_HOSTS.some((h) => parsed.hostname === h)) {
-    console.error(
-      `[GUARD] Refusing to run: hostname ${parsed.hostname} is not in allowlist ${ALLOWED_LOCAL_HOSTS.join(', ')}.`
-    );
-    process.exit(2);
-  }
-  if (dbName !== REQUIRED_DB_NAME) {
-    console.error(`[GUARD] Refusing to run: database name ${dbName} != ${REQUIRED_DB_NAME}.`);
+  const result = evaluateNonProdDatabase({
+    databaseUrl: process.env.DATABASE_URL,
+    confirmNonProdDb: process.env.CONFIRM_NON_PROD_DB,
+  });
+  if (!result.ok) {
+    console.error(`[GUARD] Refusing to run: ${result.reason}.`);
     process.exit(2);
   }
   const runId = process.env.VERIFY_D4_D6_RUN_ID || `${Date.now()}`;
-  return { url, runId, sanitizedHost };
+  return { url: result.url, runId, sanitizedHost: result.sanitizedHost };
 }
 
 // ─── Test harness ────────────────────────────────────────────────────────
