@@ -21,7 +21,7 @@ export default function DataDeletionPage() {
           rel="noopener noreferrer"
           className="text-blue-600 hover:underline"
         >
-          Facebook's Platform Terms
+          Facebook&apos;s Platform Terms
         </a>{' '}
         and applicable privacy laws.
       </p>
@@ -29,7 +29,7 @@ export default function DataDeletionPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 mb-8">
         <p className="text-blue-900 font-medium mb-1">Facebook Login Users</p>
         <p className="text-blue-800 text-sm">
-          If you used Facebook Login to access LiveShop Pro, you can also revoke our app's access
+          If you used Facebook Login to access LiveShop Pro, you can also revoke our app&apos;s access
           via your{' '}
           <a
             href="https://www.facebook.com/settings?tab=applications"
@@ -70,7 +70,7 @@ export default function DataDeletionPage() {
               <ul className="list-disc pl-5 mt-2 space-y-1">
                 <li>Your full name</li>
                 <li>The email address or Facebook account name associated with your account</li>
-                <li>A brief statement: "I request deletion of all personal data associated with my account."</li>
+                <li>A brief statement: &quot;I request deletion of all personal data associated with my account.&quot;</li>
               </ul>
             </li>
           </ol>
@@ -158,7 +158,7 @@ export default function DataDeletionPage() {
             rel="noopener noreferrer"
             className="text-blue-600 hover:underline"
           >
-            Facebook's Platform Terms
+            Facebook&apos;s Platform Terms
           </a>{' '}
           and{' '}
           <a
@@ -177,13 +177,13 @@ export default function DataDeletionPage() {
             our application.
           </li>
           <li>
-            We provide this Data Deletion page as required by Facebook's App Review process.
+            We provide this Data Deletion page as required by Facebook&apos;s App Review process.
           </li>
           <li>
             We do not retain Facebook user data beyond what is necessary to operate our service.
           </li>
           <li>
-            Revoking our app's permissions on Facebook will prevent future data collection, but
+            Revoking our app&apos;s permissions on Facebook will prevent future data collection, but
             you must submit a deletion request to remove data we have already collected.
           </li>
         </ul>

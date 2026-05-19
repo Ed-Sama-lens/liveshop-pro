@@ -12,7 +12,7 @@ export default function TermsOfServicePage() {
       <p className="text-sm text-gray-500 mb-8">Last updated: April 6, 2026</p>
 
       <p className="text-gray-700 mb-6">
-        These Terms of Service ("Terms") govern your access to and use of the{' '}
+        These Terms of Service (&quot;Terms&quot;) govern your access to and use of the{' '}
         <strong>LiveShop Pro</strong> platform and services provided by{' '}
         <strong>Nazha Hatyai</strong> (also known as Master Nivest / 合艾哪吒三太子) at{' '}
         <strong>nazhahatyai.com</strong>. By accessing or using our services, you agree to be
@@ -53,7 +53,7 @@ export default function TermsOfServicePage() {
               rel="noopener noreferrer"
               className="text-blue-600 hover:underline"
             >
-              Facebook's Terms of Service
+              Facebook&apos;s Terms of Service
             </a>
             .
           </li>
@@ -201,7 +201,7 @@ export default function TermsOfServicePage() {
           <li>Interfere with or disrupt the operation of our services</li>
           <li>Use automated tools to scrape or interact with our platform without permission</li>
           <li>Impersonate any person or entity</li>
-          <li>Engage in any activity that violates Facebook's Platform Policies</li>
+          <li>Engage in any activity that violates Facebook&apos;s Platform Policies</li>
         </ul>
       </section>
 
@@ -227,7 +227,7 @@ export default function TermsOfServicePage() {
       <section className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">10. Disclaimers</h2>
         <p className="text-gray-700">
-          Our services are provided "as is" and "as available" without warranties of any kind,
+          Our services are provided &quot;as is&quot; and &quot;as available&quot; without warranties of any kind,
           either express or implied. We do not warrant that our services will be uninterrupted,
           error-free, or free of viruses or other harmful components.
         </p>
