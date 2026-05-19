@@ -1,0 +1,26 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "time": 1747000000000,
+      "changes": [
+        {
+          "field": "feed",
+          "value": {
+            "from": {
+              "id": "100000000000001",
+              "name": "FIXTURE Commenter"
+            },
+            "item": "comment",
+            "comment_id": "200000000000002_300000000000003",
+            "post_id": "200000000000002_400000000000004",
+            "verb": "add",
+            "created_time": 1747000000000,
+            "message": "TEST-D6-001 จอง 1"
+          }
+        }
+      ]
+    }
+  ]
+}
