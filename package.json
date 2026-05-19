@@ -18,6 +18,7 @@
     "db:generate": "prisma generate",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "smoke:prod:unauth": "playwright test --config=playwright.prod-unauth-smoke.config.ts",
     "verify:booking-flow": "tsx scripts/verify-booking-flow.ts",
     "verify:booking-conversion": "tsx scripts/verify-booking-conversion.ts",
     "verify:booking-create": "tsx scripts/verify-booking-create.ts",
