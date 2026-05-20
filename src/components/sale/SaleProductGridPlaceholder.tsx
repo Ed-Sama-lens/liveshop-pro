@@ -1,10 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Grid3x3, AlertTriangle, Pencil } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
 import { AddFromStockDialog } from './AddFromStockDialog';
+import {
+  CreateQuickProductCodeDialog,
+  type QuickProductCodeCategory,
+} from './CreateQuickProductCodeDialog';
 import { EditProductCodeDialog } from './EditProductCodeDialog';
 
 /**
@@ -74,6 +78,36 @@ export function SaleProductGridPlaceholder({
     null
   );
 
+  /**
+   * Tier 3.8 — categories cached for CreateQuickProductCodeDialog.
+   * One-shot fetch on mount. /api/categories is auth-gated, shop-scoped.
+   */
+  const [quickCategories, setQuickCategories] = useState<
+    readonly QuickProductCodeCategory[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/categories', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          success?: boolean;
+          data?: ReadonlyArray<{ id: string; name: string }>;
+        };
+        if (!cancelled && body.success && Array.isArray(body.data)) {
+          setQuickCategories(body.data.map((c) => ({ id: c.id, name: c.name })));
+        }
+      } catch {
+        // Non-critical: dialog still works with empty categories list.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
@@ -128,12 +162,19 @@ export function SaleProductGridPlaceholder({
         variant="live"
       >
         <p className="text-sm text-muted-foreground">
-          กดปุ่มด้านล่างเพื่อสร้างรหัสสินค้าจากคลัง (ProductVariant) ของร้าน. รหัสสินค้าจะผูกกับรอบไลฟ์ปัจจุบัน.
+          เริ่มจากเลือกสินค้าใน Stock ที่มีอยู่, หรือสร้างใหม่ทั้งสินค้า + รหัส CF
+          พร้อมกัน (เร็วกว่าสำหรับขายไลฟ์).
         </p>
-        <AddFromStockDialog
-          liveSessionId={state.liveSessionId}
-          onCreated={onProductCreated}
-        />
+        <div className="space-y-2">
+          <CreateQuickProductCodeDialog
+            categories={quickCategories}
+            onCreated={() => onProductCreated?.()}
+          />
+          <AddFromStockDialog
+            liveSessionId={state.liveSessionId}
+            onCreated={onProductCreated}
+          />
+        </div>
       </SalePanelCard>
     );
   }
@@ -225,10 +266,16 @@ export function SaleProductGridPlaceholder({
           </span>
         </div>
       ) : null}
-      <AddFromStockDialog
-        liveSessionId={state.liveSessionId}
-        onCreated={onProductCreated}
-      />
+      <div className="space-y-2">
+        <CreateQuickProductCodeDialog
+          categories={quickCategories}
+          onCreated={() => onProductCreated?.()}
+        />
+        <AddFromStockDialog
+          liveSessionId={state.liveSessionId}
+          onCreated={onProductCreated}
+        />
+      </div>
     </SalePanelCard>
   );
 }
