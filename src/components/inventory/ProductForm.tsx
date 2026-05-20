@@ -184,8 +184,21 @@ export function ProductForm({ mode, categories, initialData }: ProductFormProps)
       });
 
       if (!res.ok) {
-        const body = await res.json();
-        toast.error(body.error ?? 'Save failed');
+        const body = (await res.json()) as {
+          error?: string;
+          fields?: Record<string, string[]>;
+        };
+        // Tier 3.8: surface per-field validation errors so admin can
+        // see exactly which input failed (was opaque "Validation
+        // failed" toast).
+        if (body.fields) {
+          const fieldMessages = Object.entries(body.fields)
+            .flatMap(([field, msgs]) => msgs.map((m) => `${field}: ${m}`))
+            .join('\n');
+          toast.error(body.error ?? 'Validation failed', { description: fieldMessages });
+        } else {
+          toast.error(body.error ?? 'Save failed');
+        }
         return;
       }
 

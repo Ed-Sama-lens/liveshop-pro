@@ -191,12 +191,25 @@ export const productRepository = Object.freeze({
   },
 
   async create(shopId: string, data: CreateProductInput): Promise<ProductRow> {
-    const { variants, ...productData } = data;
+    const { variants, name, ...productData } = data;
+
+    // Tier 3.8: when admin submits empty name (bulk live-selling code
+    // creation), fill placeholder so DB non-null constraint is
+    // satisfied while keeping the UX intent of "fill name later".
+    // Order of preference: explicit name → saleCode → stockCode.
+    // Admin can edit later via /inventory/[id] form.
+    const resolvedName =
+      name && name.trim().length > 0
+        ? name.trim()
+        : productData.saleCode && productData.saleCode.trim().length > 0
+          ? productData.saleCode.trim()
+          : productData.stockCode;
 
     const product = await prisma.$transaction(async (tx) => {
       return tx.product.create({
         data: {
           ...productData,
+          name: resolvedName,
           shopId,
           variants: variants.length > 0
             ? {
