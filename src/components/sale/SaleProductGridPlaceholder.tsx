@@ -38,6 +38,11 @@ export interface SaleBroadcastProductRow {
    * by treating it as false.
    */
   readonly isPinned?: boolean;
+  /**
+   * Tier 3.9 — Sale Date (YYYY-MM-DD shop timezone). Optional because
+   * pre-3.9 responses omit it. Null = Untagged group fallback.
+   */
+  readonly saleDate?: string | null;
 }
 
 export interface SaleProductGridProps {
@@ -48,6 +53,12 @@ export interface SaleProductGridProps {
     | {
         readonly kind: 'ready';
         readonly liveSessionId: string;
+        /**
+         * Tier 3.9 — primary grouping context. Passed to
+         * CreateQuickProductCodeDialog so newly created codes inherit
+         * the selected day. AddFromStockDialog also inherits this.
+         */
+        readonly saleDate: string;
         readonly products: readonly SaleBroadcastProductRow[];
         /**
          * Added in Commit 2T API response. Non-zero indicates cross-shop
@@ -168,6 +179,7 @@ export function SaleProductGridPlaceholder({
         <div className="space-y-2">
           <CreateQuickProductCodeDialog
             categories={quickCategories}
+            saleDate={state.kind === 'ready' ? state.saleDate : null}
             onCreated={() => onProductCreated?.()}
           />
           <AddFromStockDialog

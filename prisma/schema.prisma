@@ -108,6 +108,11 @@ model Shop {
   facebookPageId  String?  @unique
   facebookToken   String?  @db.Text // AES-256-GCM encrypted
   defaultCurrency String   @default("THB")
+  // Tier 3.9 — Sale Date context. IANA timezone string used for
+  // server-side day-boundary calculations on BroadcastProduct.saleDate
+  // and downstream sale-day grouping. Default Asia/Kuala_Lumpur per
+  // Nazha Hatyai (Malaysia-based shop). Each shop may override later.
+  timezone        String   @default("Asia/Kuala_Lumpur")
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -896,17 +901,25 @@ model CommentParseLog {
 }
 
 model BroadcastProduct {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   shopId        String
   liveSessionId String?
   productId     String
   variantId     String?
   displayCode   String
-  displayOrder  Int      @default(0)
-  priceOverride Decimal? @db.Decimal(12, 2)
-  isPinned      Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  displayOrder  Int       @default(0)
+  priceOverride Decimal?  @db.Decimal(12, 2)
+  isPinned      Boolean   @default(false)
+  // Tier 3.9 — Sale Date context. Calendar date in shop timezone
+  // (Shop.timezone). Nullable for backfill safety: existing evergreen
+  // rows without a derivable date are rendered as "Untagged" in UI.
+  // Quick-create writes today in shop timezone. Live-bound rows
+  // backfill from LiveSession.startedAt ?? scheduledAt ?? createdAt.
+  // Uniqueness target: (shopId, saleDate, displayCode) when saleDate
+  // IS NOT NULL — partial unique index added via raw SQL in migration.
+  saleDate      DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   shop        Shop            @relation(fields: [shopId], references: [id])
   liveSession LiveSession?    @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
@@ -916,12 +929,16 @@ model BroadcastProduct {
   bookings Booking[]
 
   @@unique([liveSessionId, displayCode])
-  // Note: partial unique index on (shopId, displayCode) WHERE
-  // liveSessionId IS NULL is added via raw SQL inside the migration —
-  // Prisma does not generate WHERE clauses on unique indexes. The
-  // partial index enforces evergreen-code uniqueness per shop without
-  // colliding with live-bound rows.
+  // Note: partial unique indexes added via raw SQL inside the migration —
+  // Prisma does not generate WHERE clauses on unique indexes:
+  //   1. NEW (Tier 3.9): (shopId, saleDate, displayCode) WHERE saleDate
+  //      IS NOT NULL — enforces same code reusable across dates while
+  //      preventing duplicates within a single (shop, saleDate).
+  //   2. OLD (pre-3.9 evergreen): (shopId, displayCode) WHERE
+  //      liveSessionId IS NULL — DROPPED in Tier 3.9 migration since
+  //      saleDate now replaces "evergreen" as the primary grouping.
   @@index([shopId])
+  @@index([shopId, saleDate])
   @@index([liveSessionId, displayOrder])
   @@index([productId])
   @@index([variantId])

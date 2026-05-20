@@ -192,6 +192,13 @@ export const quickBulkProductCodesBodySchema = z
         (val) => val === undefined || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0),
         'cost must be a non-negative number'
       ),
+    // Tier 3.9 — Sale Date (YYYY-MM-DD). All trios in the batch share
+    // the same saleDate. Repository defaults to today in shop timezone
+    // when omitted (D-Date-5 verdict).
+    saleDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'saleDate must be YYYY-MM-DD')
+      .optional(),
   })
   .superRefine((data, ctx) => {
     // Bulk mode requires BOTH startNo and endNo (or neither).

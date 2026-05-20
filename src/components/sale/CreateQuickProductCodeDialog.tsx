@@ -53,6 +53,12 @@ export interface CreateQuickProductCodeDialogProps {
   readonly defaultOpen?: boolean;
   /** Optional override for trigger label */
   readonly triggerLabel?: string;
+  /**
+   * Tier 3.9 — Sale Date (YYYY-MM-DD) inherited from parent. When
+   * omitted/null, server defaults to today in shop timezone. When
+   * provided, all created trios share this saleDate.
+   */
+  readonly saleDate?: string | null;
 }
 
 type FormState = {
@@ -92,6 +98,7 @@ export function CreateQuickProductCodeDialog({
   onCreated,
   defaultOpen = false,
   triggerLabel,
+  saleDate,
 }: CreateQuickProductCodeDialogProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
@@ -161,6 +168,9 @@ export function CreateQuickProductCodeDialog({
     if (form.lowStockAt !== '') payload.lowStockAt = parseInt(form.lowStockAt, 10);
     payload.price = form.price.trim();
     if (form.cost.trim() !== '') payload.cost = form.cost.trim();
+    // Tier 3.9 — inherit saleDate from parent; server falls back to
+    // today in shop timezone when omitted.
+    if (saleDate) payload.saleDate = saleDate;
 
     try {
       const res = await fetch('/api/sale/quick-product-codes', {
