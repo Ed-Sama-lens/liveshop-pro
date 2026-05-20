@@ -126,3 +126,103 @@ export const saleCustomerSearchQuerySchema = z.object({
 });
 
 export type SaleCustomerSearchQuery = z.infer<typeof saleCustomerSearchQuerySchema>;
+
+// ─── POST /api/sale/quick-product-codes (Tier 3.8) ────────────────────────
+//
+// Boss live-selling workflow: bulk-create N Product + ProductVariant +
+// BroadcastProduct rows in a single transaction. Solves first-time
+// admin onboarding where stock is empty and the admin must currently
+// switch /sale → /inventory → /sale to get a saleable code.
+//
+// Single mode: omit startNo + endNo → creates exactly one trio.
+// Bulk mode: include startNo + endNo → creates `endNo - startNo + 1`
+//   trios numbered sequentially.
+//
+// Defaults (when blank):
+//   name = '' (repo fills placeholder from saleCode → stockCode)
+//   price = '0' (accepts '0' / '0.00' / empty)
+//   quantity = 1 (Boss's preferred placeholder; 0 also accepted)
+//   category = uncategorized (categoryId null)
+//
+// Range cap: 100 per request to keep transactions bounded.
+
+/** Max products per single bulk request. Larger requires multiple calls. */
+export const QUICK_BULK_MAX_RANGE = 100;
+
+export const quickBulkProductCodesBodySchema = z
+  .object({
+    stockCodeBase: z
+      .string()
+      .min(1, 'stockCodeBase is required')
+      .max(128, 'stockCodeBase is too long'),
+    saleCodeBase: z
+      .string()
+      .min(1, 'saleCodeBase is required')
+      .max(128, 'saleCodeBase is too long'),
+    categoryId: z.string().min(1).max(128).optional(),
+    productName: z.string().max(256).optional().default(''),
+    productDetails: z.string().max(2000).optional().default(''),
+    imageUrl: z.string().url('imageUrl must be a valid URL').optional(),
+    startNo: z.number().int().min(0, 'startNo must be >= 0').optional(),
+    endNo: z.number().int().min(0, 'endNo must be >= 0').optional(),
+    quantity: z
+      .number()
+      .int()
+      .min(0, 'quantity must be >= 0')
+      .max(999_999, 'quantity is too large')
+      .optional()
+      .default(1),
+    lowStockAt: z.number().int().min(0).optional(),
+    // Price + cost accept any non-negative decimal string. Empty
+    // string transforms to '0'. Mirrors product.schemas.ts relaxation
+    // (Tier 3.8 PR-A).
+    price: z
+      .string()
+      .optional()
+      .transform((val) => (val === undefined || val.trim() === '' ? '0' : val.trim()))
+      .refine(
+        (val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0,
+        'price must be a non-negative number'
+      ),
+    cost: z
+      .string()
+      .optional()
+      .transform((val) => (val === undefined || val.trim() === '' ? undefined : val.trim()))
+      .refine(
+        (val) => val === undefined || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0),
+        'cost must be a non-negative number'
+      ),
+  })
+  .superRefine((data, ctx) => {
+    // Bulk mode requires BOTH startNo and endNo (or neither).
+    const hasStart = data.startNo !== undefined;
+    const hasEnd = data.endNo !== undefined;
+    if (hasStart !== hasEnd) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'startNo and endNo must be provided together',
+        path: hasStart ? ['endNo'] : ['startNo'],
+      });
+      return;
+    }
+    if (hasStart && hasEnd && data.startNo !== undefined && data.endNo !== undefined) {
+      if (data.endNo < data.startNo) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'endNo must be >= startNo',
+          path: ['endNo'],
+        });
+        return;
+      }
+      const count = data.endNo - data.startNo + 1;
+      if (count > QUICK_BULK_MAX_RANGE) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Bulk range too large: ${count} > ${QUICK_BULK_MAX_RANGE}`,
+          path: ['endNo'],
+        });
+      }
+    }
+  });
+
+export type QuickBulkProductCodesBody = z.infer<typeof quickBulkProductCodesBodySchema>;
