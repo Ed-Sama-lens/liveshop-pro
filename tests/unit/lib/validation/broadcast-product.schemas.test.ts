@@ -265,3 +265,87 @@ describe('updateBroadcastProductBodySchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('createBroadcastProductBodySchema — Tier 3.9 saleDate', () => {
+  it('accepts valid YYYY-MM-DD saleDate', () => {
+    const result = createBroadcastProductBodySchema.safeParse({
+      variantId: 'var123',
+      displayCode: 'CM1',
+      saleDate: '2026-05-21',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.saleDate).toBe('2026-05-21');
+    }
+  });
+
+  it('accepts body without saleDate (server resolves to today)', () => {
+    const result = createBroadcastProductBodySchema.safeParse({
+      variantId: 'var123',
+      displayCode: 'CM1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects malformed saleDate (slashes)', () => {
+    const result = createBroadcastProductBodySchema.safeParse({
+      variantId: 'var123',
+      displayCode: 'CM1',
+      saleDate: '2026/05/21',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects saleDate with timestamp', () => {
+    const result = createBroadcastProductBodySchema.safeParse({
+      variantId: 'var123',
+      displayCode: 'CM1',
+      saleDate: '2026-05-21T00:00:00Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('listBroadcastProductsQuerySchema — Tier 3.9 saleDate', () => {
+  it('accepts YYYY-MM-DD saleDate filter', () => {
+    const result = listBroadcastProductsQuerySchema.safeParse({
+      saleDate: '2026-05-21',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.saleDate).toBe('2026-05-21');
+    }
+  });
+
+  it('accepts "untagged" sentinel for NULL saleDate group', () => {
+    const result = listBroadcastProductsQuerySchema.safeParse({
+      saleDate: 'untagged',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.saleDate).toBe('untagged');
+    }
+  });
+
+  it('omitted saleDate is allowed (no filter)', () => {
+    const result = listBroadcastProductsQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.saleDate).toBeUndefined();
+    }
+  });
+
+  it('rejects malformed saleDate', () => {
+    const result = listBroadcastProductsQuerySchema.safeParse({
+      saleDate: '21-05-2026',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown sentinel', () => {
+    const result = listBroadcastProductsQuerySchema.safeParse({
+      saleDate: 'all-time',
+    });
+    expect(result.success).toBe(false);
+  });
+});

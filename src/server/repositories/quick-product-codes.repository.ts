@@ -58,6 +58,12 @@ export interface QuickBulkProductCodesInput {
   readonly lowStockAt?: number;
   readonly price?: string;
   readonly cost?: string;
+  /**
+   * Tier 3.9 — Sale Date (YYYY-MM-DD). When omitted, repository
+   * resolves today in shop timezone per D-Date-5 verdict. All created
+   * BroadcastProducts in the batch share the same saleDate.
+   */
+  readonly saleDate?: string;
 }
 
 export interface QuickBulkCreatedItem {
@@ -175,6 +181,29 @@ export const quickProductCodesRepository = Object.freeze({
       }
     }
 
+    // Tier 3.9 — Resolve saleDate once for the whole batch. Either
+    // accept the caller's explicit YYYY-MM-DD or default to today in
+    // shop timezone per D-Date-5.
+    const { parseSaleDate, todaySaleDate } = await import('@/lib/sale/sale-date');
+    let resolvedSaleDate: Date;
+    if (typeof input.saleDate === 'string' && input.saleDate.length > 0) {
+      try {
+        resolvedSaleDate = parseSaleDate(input.saleDate);
+      } catch (parseErr) {
+        throw new ValidationError(
+          parseErr instanceof Error ? parseErr.message : 'Invalid saleDate',
+          { saleDate: ['must be YYYY-MM-DD'] }
+        );
+      }
+    } else {
+      const shopRow = await prisma.shop.findFirst({
+        where: { id: input.shopId },
+        select: { timezone: true },
+      });
+      const tz = shopRow?.timezone ?? 'Asia/Kuala_Lumpur';
+      resolvedSaleDate = parseSaleDate(todaySaleDate(tz));
+    }
+
     try {
       const items = await prisma.$transaction(async (tx) => {
         const results: QuickBulkCreatedItem[] = [];
@@ -216,12 +245,13 @@ export const quickProductCodesRepository = Object.freeze({
           const bp = await tx.broadcastProduct.create({
             data: {
               shopId: input.shopId,
-              liveSessionId: null, // evergreen-only for Tier 3.8
+              liveSessionId: null, // evergreen by default; channel context lives elsewhere (Tier 3.9 date-first)
               productId: product.id,
               variantId: variant.id,
               displayCode: pair.saleCode,
               displayOrder: 0,
               isPinned: false,
+              saleDate: resolvedSaleDate, // Tier 3.9 — primary grouping context
             },
           });
 
