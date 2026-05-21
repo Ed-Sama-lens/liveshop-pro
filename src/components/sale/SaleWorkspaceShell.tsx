@@ -69,12 +69,11 @@ type ProductState =
   | { kind: 'error'; message: string }
   | {
       kind: 'ready';
-      // Tier 3.9 — `liveSessionId` is the optional event context; the
-      // primary grouping is now `saleDate`. We keep the old field so
-      // SaleProductGridPlaceholder + downstream dialogs (AddFromStock /
-      // EditProductCode) don't break, but the panel actually renders
-      // codes for the selected `saleDate` regardless of session.
-      liveSessionId: string;
+      // Tier 3.9-B-Fix-2 — `liveSessionId` is optional event context
+      // (nullable). Date-first model treats LiveSession as optional
+      // channel, not parent. Downstream dialogs (Manual Create /
+      // AddFromStock) must handle null and dispatch by BP.liveSessionId.
+      liveSessionId: string | null;
       saleDate: string;
       products: readonly SaleBroadcastProductRow[];
       filteredInvalidCount?: number;
@@ -216,7 +215,7 @@ export function SaleWorkspaceShell() {
         }
         setProductState({
           kind: 'ready',
-          liveSessionId: selectedId ?? '',
+          liveSessionId: selectedId,
           saleDate: selectedSaleDate,
           products: (body.data?.products ?? []) as SaleBroadcastProductRow[],
           filteredInvalidCount:
@@ -237,14 +236,14 @@ export function SaleWorkspaceShell() {
     };
   }, [selectedSaleDate, selectedId, refetchToken]);
 
-  // Booking queue — fetch by liveSessionId only when one is selected.
-  // When no live session is active for the chosen date, the booking
-  // queue stays in `no-session` (per Tier 3.9 D-Date-9: date-first
-  // model treats bookings as session/channel-attached today; full
-  // date-first booking fetch is Tier 4 scope).
+  // Tier 3.9-B-Fix-2 — Booking queue fetches by saleDate (date-first).
+  // Route accepts liveSessionId OR saleDate. We always pass saleDate;
+  // if Boss explicitly wants session-only filter later, add a UI toggle.
+  // Joins BP.saleDate server-side. Booking without BP cannot exist
+  // (schema FK required), so all bookings show under their BP's date.
   useEffect(() => {
-    if (!selectedId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on no-session; legitimate panel-reset pattern
+    if (!selectedSaleDate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on no-date; legitimate panel-reset pattern
       setBookingState({ kind: 'no-session' });
       return;
     }
@@ -253,7 +252,7 @@ export function SaleWorkspaceShell() {
     (async () => {
       try {
         const res = await fetch(
-          `/api/sale/bookings?liveSessionId=${encodeURIComponent(selectedId)}&limit=100`,
+          `/api/sale/bookings?saleDate=${encodeURIComponent(selectedSaleDate)}&limit=100`,
           { method: 'GET', credentials: 'same-origin' }
         );
         const body = await res.json();
@@ -267,7 +266,7 @@ export function SaleWorkspaceShell() {
         }
         setBookingState({
           kind: 'ready',
-          liveSessionId: selectedId,
+          liveSessionId: selectedId ?? '',
           bookings: (body.data?.bookings ?? []) as SaleBookingRow[],
         });
       } catch (err) {
@@ -281,7 +280,7 @@ export function SaleWorkspaceShell() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, refetchToken]);
+  }, [selectedSaleDate, selectedId, refetchToken]);
 
   /**
    * Apply local source filter to the booking queue. `'ALL'` returns the

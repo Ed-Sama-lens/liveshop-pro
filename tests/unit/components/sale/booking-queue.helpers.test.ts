@@ -128,6 +128,9 @@ describe('isBookingConfirmable()', () => {
 });
 
 describe('isBookingCancellable()', () => {
+  // Tier 3.9-B-Fix-4 (2026-05-21) — PENDING_REVIEW added to cancellable
+  // set. Admin can drop a draft booking before confirm. Previous
+  // expectation (CONFIRMED-only) updated below.
   describe('CONFIRMED eligibility', () => {
     it('OK integrity → cancellable', () => {
       expect(isBookingCancellable(row('CONFIRMED', 'OK'))).toBe(true);
@@ -137,7 +140,7 @@ describe('isBookingCancellable()', () => {
       expect(isBookingCancellable(row('CONFIRMED', 'NOT_APPLICABLE'))).toBe(true);
     });
 
-    it('undefined integrity (pre-2T API) → cancellable (graceful degradation)', () => {
+    it('undefined integrity → cancellable (graceful degradation)', () => {
       expect(isBookingCancellable(row('CONFIRMED'))).toBe(true);
     });
 
@@ -150,9 +153,30 @@ describe('isBookingCancellable()', () => {
     });
   });
 
-  describe('non-CONFIRMED statuses are never cancellable (per 2O-b spec)', () => {
+  describe('PENDING_REVIEW eligibility (Tier 3.9-B-Fix-4)', () => {
+    it('OK integrity → cancellable', () => {
+      expect(isBookingCancellable(row('PENDING_REVIEW', 'OK'))).toBe(true);
+    });
+
+    it('NOT_APPLICABLE integrity → cancellable', () => {
+      expect(isBookingCancellable(row('PENDING_REVIEW', 'NOT_APPLICABLE'))).toBe(true);
+    });
+
+    it('undefined integrity → cancellable', () => {
+      expect(isBookingCancellable(row('PENDING_REVIEW'))).toBe(true);
+    });
+
+    it('MISSING integrity → NOT cancellable', () => {
+      expect(isBookingCancellable(row('PENDING_REVIEW', 'MISSING'))).toBe(false);
+    });
+
+    it('MULTIPLE integrity → NOT cancellable', () => {
+      expect(isBookingCancellable(row('PENDING_REVIEW', 'MULTIPLE'))).toBe(false);
+    });
+  });
+
+  describe('terminal statuses are never cancellable', () => {
     const nonEligibleStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
-      'PENDING_REVIEW',
       'CANCELLED',
       'EXPIRED',
       'CONVERTED_TO_ORDER',
@@ -175,7 +199,7 @@ describe('isBookingCancellable()', () => {
     }
   });
 
-  describe('full lifecycle × integrity matrix (Boss 2O-b test plan)', () => {
+  describe('full lifecycle × integrity matrix (Tier 3.9-B-Fix-4 plan)', () => {
     const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
       'PENDING_REVIEW',
       'CONFIRMED',
@@ -191,7 +215,7 @@ describe('isBookingCancellable()', () => {
       undefined,
     ];
 
-    it('only CONFIRMED × {OK, NOT_APPLICABLE, undefined} returns true', () => {
+    it('only {PENDING_REVIEW, CONFIRMED} × {OK, NOT_APPLICABLE, undefined} returns true', () => {
       const results: Array<{ status: string; integrity: string; allowed: boolean }> = [];
       for (const status of allStatuses) {
         for (const integrity of allIntegrity) {
@@ -204,43 +228,46 @@ describe('isBookingCancellable()', () => {
       }
 
       const trueCases = results.filter((r) => r.allowed);
-      // CONFIRMED × 3 allowed integrity labels = 3 true cases
-      expect(trueCases).toHaveLength(3);
+      // 2 cancellable statuses × 3 allowed integrity labels = 6 true cases
+      expect(trueCases).toHaveLength(6);
       for (const r of trueCases) {
-        expect(r.status).toBe('CONFIRMED');
+        expect(['PENDING_REVIEW', 'CONFIRMED']).toContain(r.status);
         expect(['OK', 'NOT_APPLICABLE', 'undefined']).toContain(r.integrity);
       }
 
       const falseCases = results.filter((r) => !r.allowed);
-      // 5 statuses × 5 integrity = 25 total; minus 3 true = 22 false
-      expect(falseCases).toHaveLength(22);
+      // 5 statuses × 5 integrity = 25 total; minus 6 true = 19 false
+      expect(falseCases).toHaveLength(19);
     });
   });
 });
 
-describe('confirmable/cancellable mutual exclusivity', () => {
-  it('a single row is never both confirmable and cancellable', () => {
-    const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
-      'PENDING_REVIEW',
-      'CONFIRMED',
+describe('confirmable + cancellable interaction', () => {
+  // Tier 3.9-B-Fix-4 (2026-05-21) — PENDING_REVIEW is now BOTH
+  // confirmable AND cancellable. Admin picks one action; UI shows
+  // both buttons. Previous mutual-exclusivity invariant retired.
+  it('PENDING_REVIEW with OK integrity is both confirmable and cancellable', () => {
+    const r = row('PENDING_REVIEW', 'OK');
+    expect(isBookingConfirmable(r)).toBe(true);
+    expect(isBookingCancellable(r)).toBe(true);
+  });
+
+  it('CONFIRMED is cancellable but not confirmable (already confirmed)', () => {
+    const r = row('CONFIRMED', 'OK');
+    expect(isBookingConfirmable(r)).toBe(false);
+    expect(isBookingCancellable(r)).toBe(true);
+  });
+
+  it('terminal statuses are neither confirmable nor cancellable', () => {
+    const terminal: ReadonlyArray<SaleBookingLifecycleStatus> = [
       'CANCELLED',
       'EXPIRED',
       'CONVERTED_TO_ORDER',
     ];
-    const allIntegrity: ReadonlyArray<SaleReservationIntegrityLabel | undefined> = [
-      'OK',
-      'MISSING',
-      'MULTIPLE',
-      'NOT_APPLICABLE',
-      undefined,
-    ];
-
-    for (const status of allStatuses) {
-      for (const integrity of allIntegrity) {
-        const r = row(status, integrity);
-        const both = isBookingConfirmable(r) && isBookingCancellable(r);
-        expect(both).toBe(false);
-      }
+    for (const status of terminal) {
+      const r = row(status, 'OK');
+      expect(isBookingConfirmable(r)).toBe(false);
+      expect(isBookingCancellable(r)).toBe(false);
     }
   });
 });
@@ -292,7 +319,9 @@ describe('isBookingSelectable()', () => {
     }
   });
 
-  it('isBookingSelectable matches isBookingCancellable bit-for-bit across full matrix', () => {
+  // Tier 3.9-B-Fix-4 — PENDING_REVIEW now cancellable but NOT
+  // selectable. CONFIRMED is both. Assert selectable ⊆ cancellable.
+  it('isBookingSelectable is a subset of isBookingCancellable (CONFIRMED rows only)', () => {
     const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
       'PENDING_REVIEW',
       'CONFIRMED',
@@ -310,7 +339,9 @@ describe('isBookingSelectable()', () => {
     for (const status of allStatuses) {
       for (const integrity of allIntegrity) {
         const r = row(status, integrity);
-        expect(isBookingSelectable(r)).toBe(isBookingCancellable(r));
+        if (isBookingSelectable(r)) {
+          expect(isBookingCancellable(r)).toBe(true);
+        }
       }
     }
   });
@@ -443,26 +474,18 @@ describe('confirmable + cancellable + selectable triple-exclusivity', () => {
     }
   });
 
-  it('cancellable === selectable: every cancellable row is also selectable and vice versa', () => {
-    const allStatuses: ReadonlyArray<SaleBookingLifecycleStatus> = [
-      'PENDING_REVIEW',
-      'CONFIRMED',
-      'CANCELLED',
-      'EXPIRED',
-      'CONVERTED_TO_ORDER',
-    ];
-    const allIntegrity: ReadonlyArray<SaleReservationIntegrityLabel | undefined> = [
-      'OK',
-      'MISSING',
-      'MULTIPLE',
-      'NOT_APPLICABLE',
-      undefined,
-    ];
-    for (const status of allStatuses) {
-      for (const integrity of allIntegrity) {
-        const r = row(status, integrity);
-        expect(isBookingCancellable(r)).toBe(isBookingSelectable(r));
-      }
-    }
+  // Tier 3.9-B-Fix-4 — Removed bidirectional cancellable===selectable
+  // invariant. PENDING_REVIEW is cancellable (so admin can drop drafts)
+  // but NOT selectable for Create Order (which requires CONFIRMED).
+  it('PENDING_REVIEW with OK integrity is cancellable but not selectable', () => {
+    const r = row('PENDING_REVIEW', 'OK');
+    expect(isBookingCancellable(r)).toBe(true);
+    expect(isBookingSelectable(r)).toBe(false);
+  });
+
+  it('CONFIRMED with OK integrity is both cancellable and selectable', () => {
+    const r = row('CONFIRMED', 'OK');
+    expect(isBookingCancellable(r)).toBe(true);
+    expect(isBookingSelectable(r)).toBe(true);
   });
 });

@@ -71,7 +71,19 @@ scripts/rotate-db-password.ts
 # smoke probes. Never commit. See
 # docs/superpowers/2026-05-18-local-artifact-cleanup-policy.md.
 .pr-body-*
+.pr-body.tmp.md
 .commit-msg.tmp
 tmp-*.sh
 tmp-*.ts
 tmp-*.json
+
+# Boss-owned local reference dirs. MP4/PNG examples from Boss
+# screen recordings + smoke notes. Never commit (binary noise +
+# PII risk in screen captures). Boss directive 2026-05-21.
+sale tab example/
+test note/
+
+# Local pg_dump snapshots from migration safety procedure. Contains
+# production data; never commit. See migration safety audit docs.
+*.sql.snapshot
+liveshop-pro-pre-*-snapshot.sql

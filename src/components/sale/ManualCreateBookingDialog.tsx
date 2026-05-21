@@ -75,9 +75,14 @@ import {
 export interface ManualCreateBookingDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Live session bookings target. Required to scope the create call later. */
-  readonly liveSessionId: string;
-  /** Products available in the selected session (from shell). */
+  /**
+   * Tier 3.9-B-Fix-2 — Selected live session (optional event context).
+   * Null when no live session is active for the chosen sale date.
+   * Used as fallback when the picked BP is live-bound; ignored when
+   * the BP is evergreen (liveSessionId = null).
+   */
+  readonly liveSessionId: string | null;
+  /** Products available in the selected sale date (from shell). */
   readonly products: readonly SaleBroadcastProductRow[];
   /**
    * Invoked after a successful create (Phase 4). In Phase 3 this is
@@ -342,18 +347,30 @@ export function ManualCreateBookingDialog({
       //   from this UI even though server accepts it.
       // - idempotencyKey read from component state — same value every
       //   retry inside this draft. Do NOT call makeIdempotencyKey() here.
+      // Tier 3.9-B-Fix-2 — Dispatch by BP scope:
+      //   - BP live-bound → pass BP.liveSessionId (NOT shell's)
+      //   - BP evergreen → omit liveSessionId entirely
+      // Repository handles both paths; evergreen path requires
+      // ALLOW_EVERGREEN_BROADCAST_PRODUCT=true at server.
+      const bpLiveSessionId =
+        selectedProduct.liveSessionId === undefined
+          ? null
+          : selectedProduct.liveSessionId;
+      const requestBody: Record<string, unknown> = {
+        customerId: selectedCustomer.id,
+        broadcastProductId: selectedProduct.broadcastProductId,
+        quantity,
+        status: 'PENDING_REVIEW' as const,
+        idempotencyKey,
+      };
+      if (bpLiveSessionId !== null) {
+        requestBody.liveSessionId = bpLiveSessionId;
+      }
       const res = await fetch('/api/sale/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({
-          liveSessionId,
-          customerId: selectedCustomer.id,
-          broadcastProductId: selectedProduct.broadcastProductId,
-          quantity,
-          status: 'PENDING_REVIEW' as const,
-          idempotencyKey,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const retryAfter = res.headers.get('Retry-After');
@@ -554,7 +571,7 @@ export function ManualCreateBookingDialog({
             <dl className="grid grid-cols-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Session</dt>
               <dd className="text-right font-mono">
-                {liveSessionId.slice(0, 12)}…
+                {liveSessionId !== null ? `${liveSessionId.slice(0, 12)}…` : '— (evergreen)'}
               </dd>
               <dt className="text-muted-foreground">ลูกค้า</dt>
               <dd className="truncate text-right">{selectedCustomer!.name}</dd>

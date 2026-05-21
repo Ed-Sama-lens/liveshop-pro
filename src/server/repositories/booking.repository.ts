@@ -1569,6 +1569,31 @@ export const bookingRepository = Object.freeze({
     const unitPriceDecimal = bp.priceOverride ?? bp.variant.price;
     const unitPrice = unitPriceDecimal.toString();
 
+    // ─── 5.5 Tier 3.9-B-Fix-3 — Out-of-stock guard (Phase 1D) ───────
+    // Read variant stock snapshot. Reject booking when not enough
+    // available (quantity - reservedQty >= booking.quantity).
+    // NOTE: This is SOFT-guard only — does NOT reserve stock at PENDING
+    // create. Reservation timing (Boss Option X full) is a deferred
+    // Boss decision (T5 stock decrement model). Until that lands, the
+    // guard prevents trivial out-of-stock booking + Confirm continues
+    // to atomically reserve as today. Race: between guard and Confirm,
+    // another booking may grab the unit. Confirm's atomic UPDATE still
+    // protects the final state.
+    const variantStock = await prisma.productVariant.findUnique({
+      where: { id: bp.variantId },
+      select: { quantity: true, reservedQty: true },
+    });
+    if (variantStock) {
+      const available = variantStock.quantity - variantStock.reservedQty;
+      if (available < quantity) {
+        throw new AppError(
+          `Out of stock: requested ${quantity}, available ${available} (variant ${bp.variantId})`,
+          BOOKING_ERROR_CODES.INSUFFICIENT_STOCK,
+          409
+        );
+      }
+    }
+
     // ─── 6. Transactional write ──────────────────────────────────────
     return prisma.$transaction(async (tx) => {
       const created = await tx.booking.create({
