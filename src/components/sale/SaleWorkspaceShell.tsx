@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Radio, Settings2 } from 'lucide-react';
+import { Radio, Settings2, Calendar as CalendarIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorBoundarySection } from '@/components/ErrorBoundarySection';
 import {
@@ -24,6 +24,7 @@ import {
   SaleSourceFilterChips,
   type SourceFilterValue,
 } from './SaleSourceFilterChips';
+import { DEFAULT_SHOP_TIMEZONE, todaySaleDate } from '@/lib/sale/sale-date';
 
 /**
  * /sale workspace shell (Commit 2S — wired to read-only APIs).
@@ -68,7 +69,13 @@ type ProductState =
   | { kind: 'error'; message: string }
   | {
       kind: 'ready';
+      // Tier 3.9 — `liveSessionId` is the optional event context; the
+      // primary grouping is now `saleDate`. We keep the old field so
+      // SaleProductGridPlaceholder + downstream dialogs (AddFromStock /
+      // EditProductCode) don't break, but the panel actually renders
+      // codes for the selected `saleDate` regardless of session.
       liveSessionId: string;
+      saleDate: string;
       products: readonly SaleBroadcastProductRow[];
       filteredInvalidCount?: number;
     };
@@ -98,6 +105,19 @@ export function SaleWorkspaceShell() {
   const [sessionState, setSessionState] = useState<SessionState>({ kind: 'loading' });
   const [productState, setProductState] = useState<ProductState>({ kind: 'no-session' });
   const [bookingState, setBookingState] = useState<BookingState>({ kind: 'no-session' });
+
+  /**
+   * Tier 3.9 — Sale Date is the primary grouping context for product
+   * codes. Defaults to today in shop timezone. Boss can switch dates
+   * to view a different selling day. LiveSession is now optional
+   * event-context, not the parent of product codes.
+   *
+   * Shop timezone defaults to Asia/Kuala_Lumpur per D-Date-2.
+   * Future: read shop.timezone via /api/sale/shop-context.
+   */
+  const [selectedSaleDate, setSelectedSaleDate] = useState<string>(() =>
+    todaySaleDate(DEFAULT_SHOP_TIMEZONE)
+  );
   /**
    * Increments when a /sale mutation (Confirm in 2O-a; Cancel/Convert
    * later) returns success. The product + booking effect re-runs on
@@ -160,28 +180,31 @@ export function SaleWorkspaceShell() {
     };
   }, []);
 
-  // Refetch products + bookings whenever selectedId changes.
+  // Tier 3.9 — selected live session is now an OPTIONAL event filter,
+  // not the universal parent. Product fetches key off `selectedSaleDate`
+  // (date-first). Booking fetch still keys off liveSessionId for now
+  // because /api/sale/bookings filters by liveSessionId; date-aware
+  // booking fetch is deferred to a follow-up after parser runtime lands.
   const selectedId =
     sessionState.kind === 'ready' ? sessionState.selectedId : null;
 
+  // Product Codes — fetch by sale date using new unified endpoint.
+  // /api/sale/broadcast-products?saleDate=YYYY-MM-DD returns evergreen
+  // + live-bound rows matching that calendar day. Pre-3.9 endpoint
+  // /api/sale/live-sessions/[id]/broadcast-products is no longer used
+  // by /sale UI but kept available for legacy callers.
   useEffect(() => {
-    if (!selectedId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on session deselect; legitimate panel-reset pattern (covers both setState calls below)
+    if (!selectedSaleDate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on date clear; legitimate panel-reset pattern
       setProductState({ kind: 'no-session' });
-      setBookingState({ kind: 'no-session' });
       return;
     }
-
     let cancelled = false;
     setProductState({ kind: 'loading' });
-    setBookingState({ kind: 'loading' });
-
     (async () => {
       try {
-        const res = await fetch(
-          `/api/sale/live-sessions/${encodeURIComponent(selectedId)}/broadcast-products`,
-          { method: 'GET', credentials: 'same-origin' }
-        );
+        const url = `/api/sale/broadcast-products?scope=all&saleDate=${encodeURIComponent(selectedSaleDate)}&limit=200`;
+        const res = await fetch(url, { method: 'GET', credentials: 'same-origin' });
         const body = await res.json();
         if (cancelled) return;
         if (!res.ok || !body.success) {
@@ -193,7 +216,8 @@ export function SaleWorkspaceShell() {
         }
         setProductState({
           kind: 'ready',
-          liveSessionId: selectedId,
+          liveSessionId: selectedId ?? '',
+          saleDate: selectedSaleDate,
           products: (body.data?.products ?? []) as SaleBroadcastProductRow[],
           filteredInvalidCount:
             typeof body.data?.filteredInvalidCount === 'number'
@@ -208,7 +232,24 @@ export function SaleWorkspaceShell() {
         });
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSaleDate, selectedId, refetchToken]);
 
+  // Booking queue — fetch by liveSessionId only when one is selected.
+  // When no live session is active for the chosen date, the booking
+  // queue stays in `no-session` (per Tier 3.9 D-Date-9: date-first
+  // model treats bookings as session/channel-attached today; full
+  // date-first booking fetch is Tier 4 scope).
+  useEffect(() => {
+    if (!selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on no-session; legitimate panel-reset pattern
+      setBookingState({ kind: 'no-session' });
+      return;
+    }
+    let cancelled = false;
+    setBookingState({ kind: 'loading' });
     (async () => {
       try {
         const res = await fetch(
@@ -237,7 +278,6 @@ export function SaleWorkspaceShell() {
         });
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -285,14 +325,35 @@ export function SaleWorkspaceShell() {
             จัดการจองสินค้า คอมเมนต์ แชท และออเดอร์จากทุกช่องทาง
           </p>
         </div>
-        <Link
-          href="/live-selling"
-          title="จัดการรอบไลฟ์ (สร้าง / แก้ไข / ปิดรอบ)"
-          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <Settings2 className="size-3.5" aria-hidden />
-          จัดการรอบไลฟ์
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Tier 3.9 — Sale Date picker. Primary grouping context.
+              Defaults to today in shop timezone (Asia/Kuala_Lumpur).
+              Switching date refetches product codes for that day. */}
+          <label
+            htmlFor="sale-date-picker"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs"
+            title="วันที่ขาย / Sale Date — รหัสสินค้าจะแสดงตามวันที่ที่เลือก"
+          >
+            <CalendarIcon className="size-3.5 text-muted-foreground" aria-hidden />
+            <span className="text-xs text-muted-foreground">วันที่ขาย</span>
+            <input
+              id="sale-date-picker"
+              type="date"
+              value={selectedSaleDate}
+              onChange={(e) => setSelectedSaleDate(e.target.value)}
+              className="border-0 bg-transparent p-0 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="เลือกวันที่ขาย"
+            />
+          </label>
+          <Link
+            href="/live-selling"
+            title="จัดการรอบไลฟ์ (สร้าง / แก้ไข / ปิดรอบ)"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <Settings2 className="size-3.5" aria-hidden />
+            จัดการรอบไลฟ์
+          </Link>
+        </div>
       </header>
 
       <Card>

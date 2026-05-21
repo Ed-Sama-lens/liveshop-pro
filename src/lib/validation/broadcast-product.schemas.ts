@@ -20,6 +20,9 @@ import { z } from 'zod';
 
 const DISPLAY_CODE_REGEX = /^[A-Za-z0-9_-]+$/;
 const PRICE_REGEX = /^\d+(\.\d{1,2})?$/;
+// Tier 3.9 — ISO calendar date in shop timezone. Strict YYYY-MM-DD.
+// No time component. Server interprets in shop.timezone.
+const SALE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export const createBroadcastProductBodySchema = z.object({
   variantId: z.string().min(1, 'variantId is required').max(128, 'variantId is too long'),
@@ -38,6 +41,14 @@ export const createBroadcastProductBodySchema = z.object({
     .regex(PRICE_REGEX, 'priceOverride must be a decimal with up to 2 places')
     .optional(),
   isPinned: z.boolean().optional(),
+  /**
+   * Tier 3.9 — Sale Date in shop timezone (YYYY-MM-DD). Optional.
+   * When omitted, repository writes today in shop timezone.
+   */
+  saleDate: z
+    .string()
+    .regex(SALE_DATE_REGEX, 'saleDate must be YYYY-MM-DD')
+    .optional(),
 });
 
 export type CreateBroadcastProductBody = z.infer<typeof createBroadcastProductBodySchema>;
@@ -53,6 +64,17 @@ export const listBroadcastProductsQuerySchema = z.object({
     .optional(),
   q: z.string().trim().max(128, 'q is too long').optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  /**
+   * Tier 3.9 — Sale Date filter. YYYY-MM-DD matches that calendar
+   * day in shop timezone. Sentinel `'untagged'` returns rows with
+   * NULL saleDate (UI "Untagged" group). Omitted = no filter.
+   */
+  saleDate: z
+    .union([
+      z.string().regex(SALE_DATE_REGEX, 'saleDate must be YYYY-MM-DD'),
+      z.literal('untagged'),
+    ])
+    .optional(),
 });
 
 export type ListBroadcastProductsQuery = z.infer<typeof listBroadcastProductsQuerySchema>;

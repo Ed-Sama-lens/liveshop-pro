@@ -61,7 +61,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { scope, liveSessionId, q, limit } = parsed.data;
+    const { scope, liveSessionId, q, limit, saleDate } = parsed.data;
 
     const rows = await broadcastProductRepository.list({
       shopId: user.shopId,
@@ -69,6 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       liveSessionId,
       q,
       limit,
+      saleDate,
     });
 
     const products = rows.map((r) => ({
@@ -90,12 +91,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       availableQty: r.availableQty,
       imageUrl: r.imageUrl,
       createdAt: r.createdAt,
+      saleDate: r.saleDate, // Tier 3.9 — exposed to UI for date grouping
     }));
 
     return NextResponse.json(
       ok({
         scope,
         currency: 'MYR' as const,
+        saleDate: saleDate ?? null,
         products,
       })
     );
@@ -123,7 +126,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const bodyResult = await validateBody(request, createBroadcastProductBodySchema);
       if ('error' in bodyResult) return bodyResult.error;
 
-      const { variantId, displayCode, liveSessionId, priceOverride, isPinned } = bodyResult.data;
+      const { variantId, displayCode, liveSessionId, priceOverride, isPinned, saleDate } =
+        bodyResult.data;
 
       const created = await broadcastProductRepository.create({
         shopId: user.shopId,
@@ -132,6 +136,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ...(liveSessionId !== undefined ? { liveSessionId } : {}),
         ...(priceOverride !== undefined ? { priceOverride } : {}),
         ...(isPinned !== undefined ? { isPinned } : {}),
+        ...(saleDate !== undefined ? { saleDate } : {}),
       });
 
       // Activity log (non-blocking). Reasonable to log every create for
@@ -172,6 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           reservedQty: created.reservedQty,
           availableQty: created.availableQty,
           imageUrl: created.imageUrl,
+          saleDate: created.saleDate,
           currency: 'MYR' as const,
         }),
         { status: 201 }

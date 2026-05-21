@@ -43,6 +43,12 @@ export interface CreateBroadcastProductInput {
   readonly liveSessionId?: string;
   readonly priceOverride?: string;
   readonly isPinned?: boolean;
+  /**
+   * Tier 3.9 — Sale Date (YYYY-MM-DD). When omitted, repository writes
+   * today in shop timezone (Shop.timezone) per D-Date-5 verdict.
+   * Caller may pass explicit ISO date for backfill or admin override.
+   */
+  readonly saleDate?: string;
 }
 
 export interface BroadcastProductRow {
@@ -64,6 +70,12 @@ export interface BroadcastProductRow {
   readonly availableQty: number;
   readonly imageUrl: string | null;
   readonly createdAt: Date;
+  /**
+   * Tier 3.9 — Sale Date in YYYY-MM-DD form (shop timezone). Null when
+   * row predates migration backfill and could not be safely derived
+   * ("Untagged" group in UI per D-Date-4 verdict).
+   */
+  readonly saleDate: string | null;
 }
 
 export interface ListBroadcastProductsInput {
@@ -72,6 +84,13 @@ export interface ListBroadcastProductsInput {
   readonly liveSessionId?: string;
   readonly q?: string;
   readonly limit: number;
+  /**
+   * Tier 3.9 — Sale Date filter (YYYY-MM-DD). When provided, only rows
+   * with matching saleDate are returned. `'untagged'` sentinel returns
+   * rows with `saleDate IS NULL` (UI "Untagged" group). When omitted,
+   * scope filter alone is used (legacy compatibility).
+   */
+  readonly saleDate?: string | 'untagged';
 }
 
 /**
@@ -90,6 +109,7 @@ function toRow(
     isPinned: boolean;
     productId: string;
     variantId: string | null;
+    saleDate: Date | null;
     createdAt: Date;
     product: { name: string; images: string[] };
     variant: {
@@ -120,6 +140,13 @@ function toRow(
     Array.isArray(bp.product.images) && bp.product.images.length > 0
       ? bp.product.images[0]
       : null;
+  // saleDate (Prisma DATE) comes back as JS Date at UTC midnight. We
+  // serialize as YYYY-MM-DD using UTC components to avoid local-tz
+  // rendering shift (the DB value is calendar-only, not a timestamp).
+  const saleDateIso =
+    bp.saleDate !== null
+      ? `${bp.saleDate.getUTCFullYear()}-${String(bp.saleDate.getUTCMonth() + 1).padStart(2, '0')}-${String(bp.saleDate.getUTCDate()).padStart(2, '0')}`
+      : null;
   return Object.freeze({
     broadcastProductId: bp.id,
     shopId: bp.shopId,
@@ -139,6 +166,7 @@ function toRow(
     availableQty,
     imageUrl,
     createdAt: bp.createdAt,
+    saleDate: saleDateIso,
   });
 }
 
@@ -153,7 +181,8 @@ export const broadcastProductRepository = {
    * - ConflictError 409 — displayCode collides with existing row
    */
   async create(input: CreateBroadcastProductInput): Promise<BroadcastProductRow> {
-    const { shopId, variantId, displayCode, liveSessionId, priceOverride, isPinned } = input;
+    const { shopId, variantId, displayCode, liveSessionId, priceOverride, isPinned, saleDate } =
+      input;
 
     // ─── 1. Pure-input validation ──────────────────────────────────
     if (typeof displayCode !== 'string' || displayCode.length === 0 || displayCode.length > 32) {
@@ -213,6 +242,29 @@ export const broadcastProductRepository = {
       }
     }
 
+    // ─── 5.5 Sale Date resolution (Tier 3.9) ──────────────────────
+    // If saleDate omitted, default to today in shop timezone per
+    // D-Date-5. Lazy-load shop timezone only when needed.
+    const { parseSaleDate, todaySaleDate } = await import('@/lib/sale/sale-date');
+    let resolvedSaleDate: Date | null = null;
+    if (typeof saleDate === 'string' && saleDate.length > 0) {
+      try {
+        resolvedSaleDate = parseSaleDate(saleDate);
+      } catch (parseErr) {
+        throw new ValidationError(
+          parseErr instanceof Error ? parseErr.message : 'Invalid saleDate',
+          { saleDate: ['must be YYYY-MM-DD'] }
+        );
+      }
+    } else {
+      const shopRow = await prisma.shop.findFirst({
+        where: { id: shopId },
+        select: { timezone: true },
+      });
+      const tz = shopRow?.timezone ?? 'Asia/Kuala_Lumpur';
+      resolvedSaleDate = parseSaleDate(todaySaleDate(tz));
+    }
+
     // ─── 6. Compute displayOrder (max + 1 within scope) ───────────
     const maxOrderRow = await prisma.broadcastProduct.findFirst({
       where: isEvergreen
@@ -235,6 +287,7 @@ export const broadcastProductRepository = {
           displayOrder: nextDisplayOrder,
           priceOverride: priceOverride ?? null,
           isPinned: isPinned ?? false,
+          saleDate: resolvedSaleDate,
         },
         include: {
           product: { select: { name: true, images: true } },
@@ -253,13 +306,19 @@ export const broadcastProductRepository = {
       return toRow(created);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Unique violation — either live-bound (liveSessionId, displayCode)
-        // or the partial evergreen index (shopId, displayCode) WHERE
-        // liveSessionId IS NULL. Either way the user-facing message is
-        // the same: pick a different code.
+        // Unique violation — could be:
+        //  - live-bound (liveSessionId, displayCode)
+        //  - new Tier 3.9 partial (shopId, saleDate, displayCode) WHERE saleDate IS NOT NULL
+        // Distinguish by saleDate presence for the message; both mean
+        // "pick a different code for that scope".
+        if (resolvedSaleDate !== null) {
+          throw new ConflictError(
+            `Product code "${displayCode}" already exists for this sale date in this shop`
+          );
+        }
         throw new ConflictError(
           isEvergreen
-            ? `Evergreen product code "${displayCode}" already exists in this shop`
+            ? `Product code "${displayCode}" already exists in this shop`
             : `Live-bound product code "${displayCode}" already exists in this live session`
         );
       }
@@ -275,7 +334,7 @@ export const broadcastProductRepository = {
    * always be inspected. Tenant scoping via `shopId` in where clause.
    */
   async list(input: ListBroadcastProductsInput): Promise<readonly BroadcastProductRow[]> {
-    const { shopId, scope, liveSessionId, q, limit } = input;
+    const { shopId, scope, liveSessionId, q, limit, saleDate } = input;
 
     const scopeFilter: Prisma.BroadcastProductWhereInput =
       scope === 'evergreen'
@@ -297,12 +356,32 @@ export const broadcastProductRepository = {
           }
         : {};
 
+    // Tier 3.9 — Sale Date filter. 'untagged' sentinel matches NULL.
+    // YYYY-MM-DD string matches that calendar day. Omitted = no filter
+    // (legacy behavior; useful for migration scripts + admin tooling).
+    let saleDateFilter: Prisma.BroadcastProductWhereInput = {};
+    if (saleDate === 'untagged') {
+      saleDateFilter = { saleDate: null };
+    } else if (typeof saleDate === 'string' && saleDate.length > 0) {
+      const { parseSaleDate } = await import('@/lib/sale/sale-date');
+      try {
+        const parsed = parseSaleDate(saleDate);
+        saleDateFilter = { saleDate: parsed };
+      } catch (parseErr) {
+        throw new ValidationError(
+          parseErr instanceof Error ? parseErr.message : 'Invalid saleDate',
+          { saleDate: ['must be YYYY-MM-DD or "untagged"'] }
+        );
+      }
+    }
+
     const rows = await prisma.broadcastProduct.findMany({
       where: {
         shopId,
         variantId: { not: null },
         ...scopeFilter,
         ...searchFilter,
+        ...saleDateFilter,
       },
       orderBy: [{ isPinned: 'desc' }, { displayOrder: 'asc' }, { createdAt: 'desc' }],
       take: limit,
@@ -414,6 +493,7 @@ export const broadcastProductRepository = {
     });
     return toRow(updated);
   },
+
 
   /**
    * Hard-delete a BroadcastProduct row. Blocked when any non-EXPIRED
