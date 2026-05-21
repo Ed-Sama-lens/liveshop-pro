@@ -19,6 +19,7 @@ import {
   isBookingCancellable,
   isBookingSelectable,
   isBookingSelectableInContext,
+  isTerminalBookingStatus,
   deriveSelectionLock,
   type BookingConfirmEligibilityInput,
   type BookingSelectionRowInput,
@@ -487,5 +488,42 @@ describe('confirmable + cancellable + selectable triple-exclusivity', () => {
     const r = row('CONFIRMED', 'OK');
     expect(isBookingCancellable(r)).toBe(true);
     expect(isBookingSelectable(r)).toBe(true);
+  });
+});
+
+describe('isTerminalBookingStatus() — Tier 3.9-Fix-C1', () => {
+  it('CANCELLED is terminal', () => {
+    expect(isTerminalBookingStatus('CANCELLED')).toBe(true);
+  });
+
+  it('EXPIRED is terminal', () => {
+    expect(isTerminalBookingStatus('EXPIRED')).toBe(true);
+  });
+
+  it('CONVERTED_TO_ORDER is terminal', () => {
+    expect(isTerminalBookingStatus('CONVERTED_TO_ORDER')).toBe(true);
+  });
+
+  it('PENDING_REVIEW is NOT terminal (admin still acts on it)', () => {
+    expect(isTerminalBookingStatus('PENDING_REVIEW')).toBe(false);
+  });
+
+  it('CONFIRMED is NOT terminal (admin still cancels/converts)', () => {
+    expect(isTerminalBookingStatus('CONFIRMED')).toBe(false);
+  });
+
+  it('active + terminal sets partition full lifecycle exactly', () => {
+    const all: ReadonlyArray<SaleBookingLifecycleStatus> = [
+      'PENDING_REVIEW',
+      'CONFIRMED',
+      'CANCELLED',
+      'EXPIRED',
+      'CONVERTED_TO_ORDER',
+    ];
+    const terminal = all.filter((s) => isTerminalBookingStatus(s));
+    const active = all.filter((s) => !isTerminalBookingStatus(s));
+    expect(terminal).toHaveLength(3);
+    expect(active).toHaveLength(2);
+    expect([...terminal, ...active]).toHaveLength(5);
   });
 });

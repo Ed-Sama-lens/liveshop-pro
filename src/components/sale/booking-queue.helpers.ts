@@ -25,6 +25,21 @@ export type SaleBookingLifecycleStatus =
   | 'CONVERTED_TO_ORDER';
 
 /**
+ * Pure: classify a booking lifecycle status as "active" (admin still
+ * acts on it) vs "terminal" (already cancelled / expired / converted).
+ *
+ * Tier 3.9-Fix-C1 (2026-05-22) — UI partitions rows by this so the
+ * Bookings panel does not clutter with cancelled rows after admin
+ * cancels them. Terminal rows are surfaced under a collapsible
+ * "ประวัติ / History" section.
+ */
+export function isTerminalBookingStatus(
+  status: SaleBookingLifecycleStatus
+): boolean {
+  return status === 'CANCELLED' || status === 'EXPIRED' || status === 'CONVERTED_TO_ORDER';
+}
+
+/**
  * Minimal shape required by isBookingConfirmable. The full
  * SaleBookingRow type in SaleBookingQueuePlaceholder.tsx is a
  * superset — callers can pass full rows directly.
