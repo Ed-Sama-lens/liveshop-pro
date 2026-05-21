@@ -88,19 +88,36 @@ export const SALE_BOOKING_STATUSES = [
   'CONVERTED_TO_ORDER',
 ] as const;
 
-export const saleBookingsQuerySchema = z.object({
-  liveSessionId: z
-    .string()
-    .min(1, 'liveSessionId is required')
-    .max(128, 'liveSessionId is too long'),
-  status: z.enum(SALE_BOOKING_STATUSES).optional(),
-  customerId: z
-    .string()
-    .min(1, 'customerId must be non-empty')
-    .max(128, 'customerId is too long')
-    .optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+export const saleBookingsQuerySchema = z
+  .object({
+    // Tier 3.9-B-Fix-2 — Either liveSessionId OR saleDate required.
+    // Date-first model uses saleDate filter to join BroadcastProduct;
+    // legacy callers still pass liveSessionId. Bookings without BP
+    // (which is all of them by schema) are filtered via BP.saleDate.
+    liveSessionId: z
+      .string()
+      .min(1, 'liveSessionId must be non-empty when provided')
+      .max(128, 'liveSessionId is too long')
+      .optional(),
+    saleDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'saleDate must be YYYY-MM-DD')
+      .optional(),
+    status: z.enum(SALE_BOOKING_STATUSES).optional(),
+    customerId: z
+      .string()
+      .min(1, 'customerId must be non-empty')
+      .max(128, 'customerId is too long')
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .refine(
+    (data) => Boolean(data.liveSessionId) || Boolean(data.saleDate),
+    {
+      message: 'Provide either liveSessionId or saleDate',
+      path: ['saleDate'],
+    }
+  );
 
 export type SaleBookingsQuery = z.infer<typeof saleBookingsQuerySchema>;
 

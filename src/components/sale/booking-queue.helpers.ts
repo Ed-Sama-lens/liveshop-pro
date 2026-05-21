@@ -57,25 +57,26 @@ export function isBookingConfirmable(
 }
 
 /**
- * Pure: is a booking eligible for the Cancel action (Commit 2O-b)?
+ * Pure: is a booking eligible for the Cancel action?
  *
- * Eligibility rules (per Boss 2O-b allowed-scope verdict):
- * - status must be CONFIRMED. PENDING_REVIEW cancel/reject is
- *   intentionally NOT exposed in 2O-b. CANCELLED/EXPIRED/
- *   CONVERTED_TO_ORDER are terminal.
- * - reservationIntegrity must be OK or NOT_APPLICABLE when present.
+ * Eligibility rules:
+ * - status must be PENDING_REVIEW or CONFIRMED. Boss Tier 3.9-B-Fix-4
+ *   (2026-05-21) added PENDING_REVIEW cancel — admin can drop a draft
+ *   booking before confirming, which is the natural live-selling flow.
+ *   CANCELLED/EXPIRED/CONVERTED_TO_ORDER remain terminal.
+ * - reservationIntegrity must be OK / NOT_APPLICABLE / undefined.
  *   MISSING/MULTIPLE rows block — admin must inspect data corruption
  *   via internal tooling before releasing stock to avoid amplifying
- *   the integrity error (cancel decrements reservedQty; doing this
- *   on a row with 0 or ≥2 active reservations risks negative
- *   reservedQty or only-partially-released stock).
- * - When the field is undefined (pre-2T API response), allow Cancel
- *   on CONFIRMED to preserve degraded-but-functional behavior.
+ *   the integrity error.
+ * - PENDING_REVIEW rows typically have no active reservation
+ *   (NOT_APPLICABLE), so the cancel decrement is a no-op. CONFIRMED
+ *   rows have one active reservation; cancel decrements reservedQty
+ *   atomically via the repository.
  */
 export function isBookingCancellable(
   b: BookingConfirmEligibilityInput
 ): boolean {
-  if (b.status !== 'CONFIRMED') return false;
+  if (b.status !== 'CONFIRMED' && b.status !== 'PENDING_REVIEW') return false;
   const integrity = b.reservationIntegrity;
   if (integrity === 'MISSING' || integrity === 'MULTIPLE') return false;
   return true;
@@ -120,7 +121,13 @@ export function isBookingSelectable(
  */
 export interface SelectionLockContext {
   readonly customerId: string;
-  readonly liveSessionId: string;
+  /**
+   * Tier 3.9-B-Fix-6 — liveSessionId now nullable. Date-first model
+   * allows evergreen bookings to share Create Order under same
+   * customer. UI lock narrows by customerId only when liveSessionId
+   * is null on both lock + row.
+   */
+  readonly liveSessionId: string | null;
 }
 
 /**
@@ -131,7 +138,8 @@ export interface SelectionLockContext {
 export interface BookingSelectionRowInput
   extends BookingConfirmEligibilityInput {
   readonly customerId: string;
-  readonly liveSessionId: string;
+  /** Tier 3.9-B-Fix-6 — nullable for evergreen bookings. */
+  readonly liveSessionId: string | null;
 }
 
 /**

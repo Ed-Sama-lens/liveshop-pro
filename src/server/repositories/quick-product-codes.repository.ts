@@ -214,44 +214,94 @@ export const quickProductCodesRepository = Object.freeze({
             pair.stockCode
           );
 
-          const product = await tx.product.create({
-            data: {
-              shopId: input.shopId,
-              stockCode: pair.stockCode,
-              saleCode: pair.saleCode,
-              name: resolvedName,
-              description: input.productDetails ?? '',
-              images: input.imageUrl ? [input.imageUrl] : [],
-              categoryId: input.categoryId ?? null,
-              isActive: true,
+          // Tier 3.9-B-Fix-1 — Reuse-or-create Product per Boss's
+          // catalog model: stockCode is a stable physical-inventory
+          // ID. Same stockCode on different sale dates should reuse
+          // the existing Product, NOT collide on the shop-global
+          // Product.@@unique([shopId, stockCode]) constraint.
+          //
+          // If Product exists: do NOT overwrite name/description/
+          // category/images/price — those are catalog data the admin
+          // may have edited. Only create a new BroadcastProduct.
+          //
+          // If Variant exists with matching sku: reuse it (stock is
+          // shared across sale dates). If Variant doesn't exist on
+          // existing Product (rare — admin deleted variant): create
+          // one with the requested defaults.
+          const existingProduct = await tx.product.findUnique({
+            where: {
+              shopId_stockCode: { shopId: input.shopId, stockCode: pair.stockCode },
             },
+            include: { variants: { where: { sku: pair.saleCode }, take: 1 } },
           });
 
-          // SKU mirrors saleCode for live-selling simplicity. Admin can
-          // edit later if needing custom SKUs. Unique constraint is
-          // (productId, sku) so collision impossible across products.
-          const variant = await tx.productVariant.create({
-            data: {
-              productId: product.id,
-              sku: pair.saleCode,
-              attributes: {},
-              price: input.price ?? '0',
-              costPrice: input.cost ?? null,
-              quantity: input.quantity ?? 1,
-              lowStockAt: input.lowStockAt ?? null,
-            },
-          });
+          let product: { id: string };
+          let variant: { id: string };
 
+          if (existingProduct) {
+            product = { id: existingProduct.id };
+            if (existingProduct.variants.length > 0) {
+              variant = { id: existingProduct.variants[0].id };
+            } else {
+              // Edge case: Product exists but no variant with matching
+              // sku. Create one with caller-provided defaults (or
+              // sensible fallbacks). Doesn't touch existing variants.
+              const v = await tx.productVariant.create({
+                data: {
+                  productId: existingProduct.id,
+                  sku: pair.saleCode,
+                  attributes: {},
+                  price: input.price ?? '0',
+                  costPrice: input.cost ?? null,
+                  quantity: input.quantity ?? 1,
+                  lowStockAt: input.lowStockAt ?? null,
+                },
+              });
+              variant = { id: v.id };
+            }
+          } else {
+            const p = await tx.product.create({
+              data: {
+                shopId: input.shopId,
+                stockCode: pair.stockCode,
+                saleCode: pair.saleCode,
+                name: resolvedName,
+                description: input.productDetails ?? '',
+                images: input.imageUrl ? [input.imageUrl] : [],
+                categoryId: input.categoryId ?? null,
+                isActive: true,
+              },
+            });
+            product = { id: p.id };
+
+            const v = await tx.productVariant.create({
+              data: {
+                productId: p.id,
+                sku: pair.saleCode,
+                attributes: {},
+                price: input.price ?? '0',
+                costPrice: input.cost ?? null,
+                quantity: input.quantity ?? 1,
+                lowStockAt: input.lowStockAt ?? null,
+              },
+            });
+            variant = { id: v.id };
+          }
+
+          // BroadcastProduct is always new — even when Product/Variant
+          // reuse — because saleDate is the primary grouping context.
+          // Uniqueness is enforced by partial index
+          // (shopId, saleDate, displayCode) WHERE saleDate IS NOT NULL.
           const bp = await tx.broadcastProduct.create({
             data: {
               shopId: input.shopId,
-              liveSessionId: null, // evergreen by default; channel context lives elsewhere (Tier 3.9 date-first)
+              liveSessionId: null, // evergreen by default; channel context lives elsewhere
               productId: product.id,
               variantId: variant.id,
               displayCode: pair.saleCode,
               displayOrder: 0,
               isPinned: false,
-              saleDate: resolvedSaleDate, // Tier 3.9 — primary grouping context
+              saleDate: resolvedSaleDate,
             },
           });
 
@@ -274,15 +324,36 @@ export const quickProductCodesRepository = Object.freeze({
         items: Object.freeze(items),
       });
     } catch (err) {
-      // P2002 = unique constraint violation. Map to ConflictError with
-      // useful payload so the UI can show which code collided.
+      // P2002 = unique constraint violation. Tier 3.9-B-Fix-1 — better
+      // classification: identify which constraint fired so admin sees
+      // an actionable message. After reuse-Product logic, the only
+      // remaining P2002 path is BroadcastProduct same date+displayCode.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const target = Array.isArray(err.meta?.target)
           ? err.meta?.target.join(', ')
-          : String(err.meta?.target ?? 'unknown');
-        throw new ConflictError(
-          `Duplicate code: ${target}. Transaction rolled back; no products created.`
-        );
+          : String(err.meta?.target ?? '');
+        // Recognized targets from schema + raw-SQL partial unique indexes:
+        //   - Product.@@unique([shopId, stockCode]) → 'shopId,stockCode' (should NOT fire post-reuse-Product)
+        //   - ProductVariant.@@unique([productId, sku]) → 'productId,sku' (should NOT fire post-reuse-Variant)
+        //   - BroadcastProduct.@@unique([liveSessionId, displayCode]) → 'liveSessionId,displayCode'
+        //   - Raw partial: BroadcastProduct_shop_saleDate_displayCode_key (no Prisma meta.target — fallback 'date')
+        let friendly = `Duplicate code: ${target || 'unknown'}. Transaction rolled back; no products created.`;
+        if (target.includes('stockCode')) {
+          friendly =
+            'Stock code already exists in this shop with different metadata. Reuse logic failed unexpectedly.';
+        } else if (target.includes('sku')) {
+          friendly =
+            'Variant SKU collision. The existing product has a conflicting variant. Edit the product before retrying.';
+        } else if (target.includes('liveSessionId') && target.includes('displayCode')) {
+          friendly =
+            'This product code already exists in the same live session. Pick a different code or cancel the existing entry.';
+        } else {
+          // Partial unique index on (shopId, saleDate, displayCode) WHERE
+          // saleDate IS NOT NULL fires here. Prisma surfaces no meta.target.
+          friendly =
+            'Product code already exists for the selected sale date in this shop. Pick a different code or a different sale date.';
+        }
+        throw new ConflictError(friendly);
       }
       throw err;
     }

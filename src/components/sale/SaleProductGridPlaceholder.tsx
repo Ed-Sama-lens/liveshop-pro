@@ -32,6 +32,12 @@ export interface SaleBroadcastProductRow {
   readonly availableQty: number;
   readonly imageUrl: string | null;
   /**
+   * Tier 3.9-B-Fix-2 — BP scope marker. `null` = evergreen (no
+   * liveSession parent). Non-null = live-bound to that session.
+   * Manual Booking dialog dispatches by this field.
+   */
+  readonly liveSessionId?: string | null;
+  /**
    * Tier 3.6 — surfaces BroadcastProduct.isPinned for the edit dialog.
    * Optional on the row because older API responses (Commit 2S) did
    * not return it. EditProductCodeDialog handles undefined gracefully
@@ -52,7 +58,12 @@ export interface SaleProductGridProps {
     | { readonly kind: 'error'; readonly message: string }
     | {
         readonly kind: 'ready';
-        readonly liveSessionId: string;
+        /**
+         * Tier 3.9-B-Fix-2 — Optional. `null` when no live session is
+         * active for the selected sale date. Date-first model treats
+         * LiveSession as optional event context, not parent.
+         */
+        readonly liveSessionId: string | null;
         /**
          * Tier 3.9 — primary grouping context. Passed to
          * CreateQuickProductCodeDialog so newly created codes inherit

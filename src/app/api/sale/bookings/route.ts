@@ -244,12 +244,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { liveSessionId, status, customerId, limit } = parsed.data;
+    const { liveSessionId, saleDate, status, customerId, limit } = parsed.data;
+
+    // Tier 3.9-B-Fix-2 — saleDate filter joins BroadcastProduct.
+    // Either liveSessionId or saleDate required (enforced by schema
+    // refine). When both provided, both filters apply (intersection).
+    let saleDateBpFilter: { broadcastProduct: { saleDate: Date } } | object = {};
+    if (typeof saleDate === 'string' && saleDate.length > 0) {
+      const { parseSaleDate } = await import('@/lib/sale/sale-date');
+      saleDateBpFilter = { broadcastProduct: { saleDate: parseSaleDate(saleDate) } };
+    }
 
     const rows = await prisma.booking.findMany({
       where: {
         shopId: user.shopId,
-        liveSessionId,
+        ...(liveSessionId !== undefined ? { liveSessionId } : {}),
+        ...saleDateBpFilter,
         ...(status !== undefined ? { status } : {}),
         ...(customerId !== undefined ? { customerId } : {}),
       },
@@ -329,7 +339,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       Object.freeze({
         success: true,
         data: Object.freeze({
-          liveSessionId,
+          liveSessionId: liveSessionId ?? null,
+          saleDate: saleDate ?? null,
           currency: 'MYR' as const,
           bookings,
         }),

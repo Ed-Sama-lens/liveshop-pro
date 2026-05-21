@@ -50,10 +50,15 @@ import type { SaleBookingRow } from './SaleBookingQueuePlaceholder';
 export interface CreateOrderDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** All rows must share customerId + liveSessionId (caller enforces). */
+  /**
+   * Tier 3.9-B-Fix-6 — All rows must share customerId. liveSessionId
+   * lock relaxed: rows can be evergreen (null) as long as they belong
+   * to same customer. UI passes null liveSessionId for V2 conversion
+   * path (route `ALLOW_BOOKINGIDS_ONLY_CONVERSION=true`).
+   */
   readonly selectedRows: readonly SaleBookingRow[];
   readonly customerId: string;
-  readonly liveSessionId: string;
+  readonly liveSessionId: string | null;
   readonly onSuccess: () => void;
 }
 
@@ -180,15 +185,18 @@ export function CreateOrderDialog({
     setIsSubmitting(true);
     try {
       const bookingIds = selectedRows.map((b) => b.bookingId);
+      // Tier 3.9-B-Fix-6 — Dispatch by liveSessionId:
+      //   - non-null → V1 legacy path (liveSessionId + customerId + bookingIds)
+      //   - null → V2 bookingIds-only (requires ALLOW_BOOKINGIDS_ONLY_CONVERSION=true)
+      const requestBody: Record<string, unknown> =
+        liveSessionId !== null
+          ? { liveSessionId, customerId, bookingIds }
+          : { bookingIds };
       const res = await fetch('/api/sale/orders/from-bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({
-          liveSessionId,
-          customerId,
-          bookingIds,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const retryAfter = res.headers.get('Retry-After');
@@ -248,7 +256,7 @@ export function CreateOrderDialog({
           <dt className="text-muted-foreground">Customer</dt>
           <dd className="text-right font-mono">{customerId.slice(0, 12)}…</dd>
           <dt className="text-muted-foreground">Session</dt>
-          <dd className="text-right font-mono">{liveSessionId.slice(0, 12)}…</dd>
+          <dd className="text-right font-mono">{liveSessionId !== null ? `${liveSessionId.slice(0, 12)}…` : '— (evergreen)'}</dd>
         </dl>
 
         <div className="rounded-md border border-border">
