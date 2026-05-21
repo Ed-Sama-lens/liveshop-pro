@@ -195,6 +195,7 @@ export function SaleProductGridPlaceholder({
           />
           <AddFromStockDialog
             liveSessionId={state.liveSessionId}
+            saleDate={state.kind === 'ready' ? state.saleDate : null}
             onCreated={onProductCreated}
           />
         </div>

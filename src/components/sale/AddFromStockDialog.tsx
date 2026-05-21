@@ -49,6 +49,15 @@ interface ProductSearchVariantRow {
 
 export interface AddFromStockDialogProps {
   readonly liveSessionId: string | null;
+  /**
+   * Tier 3.9-Fix-C4 — Sale Date (YYYY-MM-DD) inherited from /sale
+   * picker. Forwarded to POST /api/sale/broadcast-products body.
+   * When omitted/null, server defaults to today in shop timezone.
+   * Boss UI smoke 2026-05-22 revealed AddFromStock without this prop
+   * could only add codes to today; switching picker to another date
+   * still wrote today → "already exists for this sale date" conflict.
+   */
+  readonly saleDate?: string | null;
   readonly onCreated?: () => void;
 }
 
@@ -74,6 +83,7 @@ function describeAttrs(attributes: unknown): string {
 
 export function AddFromStockDialog({
   liveSessionId,
+  saleDate,
   onCreated,
 }: AddFromStockDialogProps) {
   const [open, setOpen] = useState(false);
@@ -184,6 +194,12 @@ export function AddFromStockDialog({
       };
       if (liveSessionId !== null) body.liveSessionId = liveSessionId;
       if (priceOverride.trim().length > 0) body.priceOverride = priceOverride.trim();
+      // Tier 3.9-Fix-C4 — Forward selected saleDate so server writes BP
+      // with the picker-bound date, not today. When prop omitted/null,
+      // server falls back to today in shop timezone (legacy behavior).
+      if (typeof saleDate === 'string' && saleDate.length > 0) {
+        body.saleDate = saleDate;
+      }
       const res = await fetch('/api/sale/broadcast-products', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
