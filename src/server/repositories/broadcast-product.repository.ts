@@ -327,6 +327,235 @@ export const broadcastProductRepository = {
   },
 
   /**
+   * Batch-create N BroadcastProduct rows in a single Prisma transaction.
+   * All-or-nothing: if any item fails validation, tenant, or uniqueness,
+   * the entire batch rolls back.
+   *
+   * Tier 3.9-C (2026-05-22). Used by AddFromStock multi-select to add
+   * many stock variants to the same saleDate in one click.
+   *
+   * Per-item displayCode defaults to caller-supplied displayCode or
+   * (if omitted) Product.saleCode → ProductVariant.sku → stockCode
+   * (handled in the caller / route layer). Each input must have a
+   * resolved displayCode by the time it reaches this method.
+   *
+   * Returns the created rows in the same order as the input array.
+   *
+   * Throws:
+   * - ValidationError 400 — bad item, evergreen-without-flag, duplicate in batch
+   * - NotFoundError 404 — variantId not in shop, liveSessionId not in shop
+   * - ConflictError 409 — displayCode collides with existing row OR
+   *   within the batch
+   */
+  async createMany(input: {
+    readonly shopId: string;
+    readonly items: ReadonlyArray<{
+      readonly variantId: string;
+      readonly displayCode: string;
+      readonly priceOverride?: string;
+    }>;
+    readonly liveSessionId?: string;
+    readonly saleDate?: string;
+  }): Promise<readonly BroadcastProductRow[]> {
+    const { shopId, items, liveSessionId, saleDate } = input;
+
+    if (items.length === 0) {
+      throw new ValidationError('items must contain at least one entry', {
+        items: ['required'],
+      });
+    }
+    if (items.length > 50) {
+      throw new ValidationError('items may not exceed 50 entries per batch', {
+        items: [`got ${items.length}, max 50`],
+      });
+    }
+
+    // Pure-input validation per item.
+    for (const item of items) {
+      if (
+        typeof item.displayCode !== 'string' ||
+        item.displayCode.length === 0 ||
+        item.displayCode.length > 32
+      ) {
+        throw new ValidationError(
+          `displayCode "${item.displayCode}" must be 1..32 chars`,
+          { displayCode: ['required, 1..32 chars'] }
+        );
+      }
+      if (!/^[A-Za-z0-9_-]+$/.test(item.displayCode)) {
+        throw new ValidationError(
+          `displayCode "${item.displayCode}" must contain only A-Z, a-z, 0-9, _, -`,
+          { displayCode: ['invalid format'] }
+        );
+      }
+      if (item.priceOverride !== undefined) {
+        if (!/^\d+(\.\d{1,2})?$/.test(item.priceOverride)) {
+          throw new ValidationError(
+            `priceOverride "${item.priceOverride}" must be a decimal with up to 2 places`,
+            { priceOverride: ['invalid format'] }
+          );
+        }
+      }
+    }
+
+    // Detect intra-batch displayCode duplicates BEFORE hitting DB.
+    const codeSet = new Set<string>();
+    for (const item of items) {
+      if (codeSet.has(item.displayCode)) {
+        throw new ConflictError(
+          `Duplicate displayCode "${item.displayCode}" in batch — each item must have a unique code`
+        );
+      }
+      codeSet.add(item.displayCode);
+    }
+
+    const isEvergreen = liveSessionId === undefined || liveSessionId === null;
+    if (isEvergreen && !allowEvergreenBroadcastProduct()) {
+      throw new ValidationError(
+        'Evergreen broadcast products are not enabled. Set ALLOW_EVERGREEN_BROADCAST_PRODUCT=true.',
+        { liveSessionId: ['required when ALLOW_EVERGREEN_BROADCAST_PRODUCT=false'] }
+      );
+    }
+
+    // LiveSession tenant check (once for live-bound batch).
+    if (!isEvergreen) {
+      const session = await prisma.liveSession.findFirst({
+        where: { id: liveSessionId, shopId },
+        select: { id: true },
+      });
+      if (!session) {
+        throw new NotFoundError('LiveSession not found in this shop');
+      }
+    }
+
+    // Tenant + existence check for ALL variants in one query.
+    const variantIds = items.map((i) => i.variantId);
+    const variants = await prisma.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      select: {
+        id: true,
+        product: { select: { id: true, shopId: true } },
+      },
+    });
+    if (variants.length !== items.length) {
+      const foundIds = new Set(variants.map((v) => v.id));
+      const missing = variantIds.filter((id) => !foundIds.has(id));
+      throw new NotFoundError(
+        `ProductVariant not found: ${missing.join(', ')}`
+      );
+    }
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+    for (const v of variants) {
+      if (v.product.shopId !== shopId) {
+        throw new NotFoundError('ProductVariant not found in this shop');
+      }
+    }
+
+    // Resolve saleDate once (shared across batch).
+    const { parseSaleDate, todaySaleDate } = await import('@/lib/sale/sale-date');
+    let resolvedSaleDate: Date;
+    if (typeof saleDate === 'string' && saleDate.length > 0) {
+      try {
+        resolvedSaleDate = parseSaleDate(saleDate);
+      } catch (parseErr) {
+        throw new ValidationError(
+          parseErr instanceof Error ? parseErr.message : 'Invalid saleDate',
+          { saleDate: ['must be YYYY-MM-DD'] }
+        );
+      }
+    } else {
+      const shopRow = await prisma.shop.findFirst({
+        where: { id: shopId },
+        select: { timezone: true },
+      });
+      const tz = shopRow?.timezone ?? 'Asia/Kuala_Lumpur';
+      resolvedSaleDate = parseSaleDate(todaySaleDate(tz));
+    }
+
+    // Atomic batch insert.
+    try {
+      const created = await prisma.$transaction(async (tx) => {
+        // Compute starting displayOrder per scope (once, then increment).
+        const maxOrderRow = await tx.broadcastProduct.findFirst({
+          where: isEvergreen
+            ? { shopId, liveSessionId: null }
+            : { liveSessionId: liveSessionId! },
+          orderBy: { displayOrder: 'desc' },
+          select: { displayOrder: true },
+        });
+        let nextOrder = (maxOrderRow?.displayOrder ?? -1) + 1;
+
+        const results: Array<{
+          id: string;
+          shopId: string;
+          liveSessionId: string | null;
+          displayCode: string;
+          displayOrder: number;
+          priceOverride: Prisma.Decimal | null;
+          isPinned: boolean;
+          productId: string;
+          variantId: string | null;
+          saleDate: Date | null;
+          createdAt: Date;
+          product: { name: string; images: string[] };
+          variant: {
+            id: string;
+            sku: string;
+            attributes: Prisma.JsonValue;
+            price: Prisma.Decimal;
+            quantity: number;
+            reservedQty: number;
+          } | null;
+        }> = [];
+
+        for (const item of items) {
+          const v = variantById.get(item.variantId)!;
+          const row = await tx.broadcastProduct.create({
+            data: {
+              shopId,
+              liveSessionId: liveSessionId ?? null,
+              productId: v.product.id,
+              variantId: v.id,
+              displayCode: item.displayCode,
+              displayOrder: nextOrder++,
+              priceOverride: item.priceOverride ?? null,
+              isPinned: false,
+              saleDate: resolvedSaleDate,
+            },
+            include: {
+              product: { select: { name: true, images: true } },
+              variant: {
+                select: {
+                  id: true,
+                  sku: true,
+                  attributes: true,
+                  price: true,
+                  quantity: true,
+                  reservedQty: true,
+                },
+              },
+            },
+          });
+          results.push(row);
+        }
+        return results;
+      });
+      return Object.freeze(created.map(toRow));
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Partial unique index (shopId, saleDate, displayCode) WHERE
+        // saleDate IS NOT NULL OR live-bound (liveSessionId, displayCode)
+        // P2002 doesn't surface target reliably for raw-SQL partial index.
+        // Generic friendly message.
+        throw new ConflictError(
+          'One or more product codes already exist for the selected sale date in this shop. Transaction rolled back; no codes created.'
+        );
+      }
+      throw err;
+    }
+  },
+
+  /**
    * List BroadcastProduct rows scoped to a shop. Supports live / evergreen
    * / all filtering and optional displayCode + product name search.
    *

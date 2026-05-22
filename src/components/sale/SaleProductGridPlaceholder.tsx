@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Grid3x3, AlertTriangle, Pencil } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SalePanelCard } from './SalePanelCard';
@@ -130,6 +130,21 @@ export function SaleProductGridPlaceholder({
     };
   }, []);
 
+  // Tier 3.9-C — already-added variant map for current saleDate.
+  // Forwarded to AddFromStockDialog so admin sees which variants
+  // already exist on the selected day. Empty map = no codes loaded
+  // yet (loading / error / empty state).
+  const alreadyAddedByVariantId = useMemo<ReadonlyMap<string, string>>(() => {
+    if (state.kind !== 'ready') return new Map();
+    const map = new Map<string, string>();
+    for (const p of state.products) {
+      if (p.variantId) {
+        map.set(p.variantId, p.displayCode);
+      }
+    }
+    return map;
+  }, [state]);
+
   if (state.kind === 'no-session') {
     return (
       <SalePanelCard
@@ -196,6 +211,7 @@ export function SaleProductGridPlaceholder({
           <AddFromStockDialog
             liveSessionId={state.liveSessionId}
             saleDate={state.kind === 'ready' ? state.saleDate : null}
+            alreadyAddedByVariantId={alreadyAddedByVariantId}
             onCreated={onProductCreated}
           />
         </div>
@@ -293,10 +309,13 @@ export function SaleProductGridPlaceholder({
       <div className="space-y-2">
         <CreateQuickProductCodeDialog
           categories={quickCategories}
+          saleDate={state.kind === 'ready' ? state.saleDate : null}
           onCreated={() => onProductCreated?.()}
         />
         <AddFromStockDialog
           liveSessionId={state.liveSessionId}
+          saleDate={state.kind === 'ready' ? state.saleDate : null}
+          alreadyAddedByVariantId={alreadyAddedByVariantId}
           onCreated={onProductCreated}
         />
       </div>

@@ -53,6 +53,51 @@ export const createBroadcastProductBodySchema = z.object({
 
 export type CreateBroadcastProductBody = z.infer<typeof createBroadcastProductBodySchema>;
 
+/**
+ * Tier 3.9-C — Batch create body. Used by AddFromStock multi-select.
+ * Atomic: $transaction rolls back entire batch on any failure.
+ *
+ * Caps:
+ * - items.length 1..50 (UI typically <20; cap prevents abuse)
+ * - displayCode 1..32 chars, [A-Za-z0-9_-] (per-item rule below)
+ * - shared liveSessionId / saleDate apply to the whole batch
+ */
+export const createBroadcastProductBatchBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        variantId: z
+          .string()
+          .min(1, 'variantId is required')
+          .max(128, 'variantId is too long'),
+        displayCode: z
+          .string()
+          .min(1, 'displayCode is required')
+          .max(32, 'displayCode must be 32 characters or fewer')
+          .regex(DISPLAY_CODE_REGEX, 'displayCode must contain only A-Z, a-z, 0-9, _, -'),
+        priceOverride: z
+          .string()
+          .regex(PRICE_REGEX, 'priceOverride must be a decimal with up to 2 places')
+          .optional(),
+      })
+    )
+    .min(1, 'items must contain at least one entry')
+    .max(50, 'items may not exceed 50 entries per batch'),
+  liveSessionId: z
+    .string()
+    .min(1, 'liveSessionId must be non-empty when provided')
+    .max(128, 'liveSessionId is too long')
+    .optional(),
+  saleDate: z
+    .string()
+    .regex(SALE_DATE_REGEX, 'saleDate must be YYYY-MM-DD')
+    .optional(),
+});
+
+export type CreateBroadcastProductBatchBody = z.infer<
+  typeof createBroadcastProductBatchBodySchema
+>;
+
 export const BROADCAST_PRODUCT_SCOPES = ['live', 'evergreen', 'all'] as const;
 
 export const listBroadcastProductsQuerySchema = z.object({
