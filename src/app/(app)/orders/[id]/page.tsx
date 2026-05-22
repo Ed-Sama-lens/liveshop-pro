@@ -198,30 +198,57 @@ export default function OrderDetailPage() {
         </div>
       </Card>
 
-      {/* Order Items */}
+      {/* Order Items — Tier 3.9-Fix-D1.
+          Boss wants: No. | รหัสสต๊อก | รหัสขาย | Product | ราคาต่อหน่วย |
+          จำนวน | ยอดรวม + summary footer (total qty + total amount).
+          stockCode + saleCode now surfaced by order.repository.ts. */}
       {order.items && order.items.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">{t('items')}</h2>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12 text-center">No.</TableHead>
+                <TableHead>รหัสสต๊อก</TableHead>
+                <TableHead>รหัสขาย</TableHead>
                 <TableHead>Product</TableHead>
-                <TableHead>SKU</TableHead>
                 <TableHead className="text-right">{t('unitPrice')}</TableHead>
                 <TableHead className="text-right">{t('quantity')}</TableHead>
                 <TableHead className="text-right">{t('totalAmount')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {order.items.map((item) => (
+              {order.items.map((item, idx) => (
                 <TableRow key={item.id}>
+                  <TableCell className="text-center text-muted-foreground font-mono text-xs">
+                    {idx + 1}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{item.product.stockCode}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {item.product.saleCode ?? '—'}
+                  </TableCell>
                   <TableCell className="font-medium">{item.product.name}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">{item.variant.sku}</TableCell>
-                  <TableCell className="text-right font-mono">RM{Number(item.unitPrice).toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    RM{Number(item.unitPrice).toLocaleString()}
+                  </TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell className="text-right font-mono">RM{Number(item.totalPrice).toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    RM{Number(item.totalPrice).toLocaleString()}
+                  </TableCell>
                 </TableRow>
               ))}
+              {/* Summary row */}
+              <TableRow className="border-t-2 border-border bg-muted/30 font-semibold">
+                <TableCell colSpan={5} className="text-right">
+                  รวม
+                </TableCell>
+                <TableCell className="text-right">
+                  {order.items.reduce((sum, it) => sum + it.quantity, 0)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  RM{order.items.reduce((sum, it) => sum + Number(it.totalPrice), 0).toLocaleString()}
+                </TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </div>

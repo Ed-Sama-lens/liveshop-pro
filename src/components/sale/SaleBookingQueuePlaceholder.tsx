@@ -19,6 +19,7 @@ import {
   isBookingCancellable,
   isBookingSelectable,
   isBookingSelectableInContext,
+  isTerminalBookingStatus,
   deriveSelectionLock,
   type SaleReservationIntegrityLabel as HelperReservationIntegrityLabel,
   type SelectionLockContext,
@@ -174,6 +175,13 @@ export function SaleBookingQueuePlaceholder({
   // Phase 4.
   const [manualCreateOpen, setManualCreateOpen] = useState(false);
 
+  // Tier 3.9-Fix-C1 (2026-05-22) — Hide terminal-status rows (CANCELLED
+  // / EXPIRED / CONVERTED_TO_ORDER) from the active list by default
+  // so cancelling a booking doesn't leave clutter behind. Admin can
+  // toggle to inspect history when needed. State defaults to false
+  // (history collapsed).
+  const [showHistory, setShowHistory] = useState(false);
+
   // SaleBookingRow doesn't carry liveSessionId (it lives once on the
   // parent state shape returned by GET /api/sale/bookings). Augment
   // each row with the session id when feeding the lock helpers so the
@@ -264,13 +272,19 @@ export function SaleBookingQueuePlaceholder({
   // existing selectedIds.size === 0 gate. The Manual Create button is
   // always visible when state.kind === 'ready' so admin can seed the
   // first booking manually.
-  const isEmpty = state.bookings.length === 0;
+  // Tier 3.9-Fix-C1 — Partition by terminal status. Active panel shows
+  // PENDING_REVIEW + CONFIRMED (the rows admin still acts on). Terminal
+  // rows (CANCELLED / EXPIRED / CONVERTED_TO_ORDER) collapse under a
+  // history toggle so cancelling doesn't clutter the active workflow.
+  const activeBookings = state.bookings.filter((b) => !isTerminalBookingStatus(b.status));
+  const terminalBookings = state.bookings.filter((b) => isTerminalBookingStatus(b.status));
+  const isEmpty = activeBookings.length === 0;
   const selectedCount = selectedIds.size;
   const subtitle = isEmpty
-    ? 'ยังไม่มีรายการจอง — กดปุ่ม “สร้างการจองด้วยตนเอง” ด้านล่างเพื่อเริ่ม'
+    ? 'ยังไม่มีรายการจองที่ต้องดำเนินการ — กดปุ่ม “สร้างการจองด้วยตนเอง” ด้านล่างเพื่อเริ่ม'
     : selectedCount > 0
-      ? `${state.bookings.length} รายการ — เลือก ${selectedCount}`
-      : `${state.bookings.length} รายการ (ใหม่ → เก่า)`;
+      ? `${activeBookings.length} รายการ — เลือก ${selectedCount}`
+      : `${activeBookings.length} รายการ (ใหม่ → เก่า)`;
 
   return (
     <SalePanelCard
@@ -286,7 +300,7 @@ export function SaleBookingQueuePlaceholder({
         </p>
       ) : null}
       <div className={`space-y-1.5 max-h-80 overflow-y-auto${isEmpty ? ' hidden' : ''}`}>
-        {state.bookings.slice(0, 20).map((b) => {
+        {activeBookings.slice(0, 20).map((b) => {
           const badge = STATUS_BADGE[b.status];
           const integrityBadge = renderIntegrityBadge(b.reservationIntegrity);
           const confirmable = isBookingConfirmable(b);
@@ -389,10 +403,59 @@ export function SaleBookingQueuePlaceholder({
           );
         })}
       </div>
-      {state.bookings.length > 20 ? (
+      {activeBookings.length > 20 ? (
         <p className="text-[11px] text-muted-foreground">
-          แสดง 20 จาก {state.bookings.length} รายการ
+          แสดง 20 จาก {activeBookings.length} รายการที่ต้องดำเนินการ
         </p>
+      ) : null}
+
+      {/*
+        Tier 3.9-Fix-C1 — Terminal-status history (collapsible).
+        Cancelled / Expired / Converted rows live here so the active
+        list above stays clean. Toggle is hidden when no terminal rows
+        exist for the current saleDate.
+      */}
+      {terminalBookings.length > 0 ? (
+        <details
+          className="rounded-md border border-dashed border-border bg-muted/20 px-2 py-1.5 text-xs"
+          open={showHistory}
+          onToggle={(e) => setShowHistory((e.target as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+            ประวัติ ({terminalBookings.length}) — ที่ยกเลิก / หมดอายุ / ส่งเป็นออเดอร์แล้ว
+          </summary>
+          <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto">
+            {terminalBookings.slice(0, 50).map((b) => {
+              const badge = STATUS_BADGE[b.status];
+              return (
+                <div
+                  key={b.bookingId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-2 py-1 text-[11px] opacity-70"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                      {b.displayCode ?? '?'}
+                    </span>
+                    <BookingSourceChip source={b.source} />
+                    <span className="truncate">{b.customerName}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="font-mono text-[10px]">×{b.quantity}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      RM{b.unitPrice}
+                    </span>
+                    <Badge className={`text-[10px] ${badge.className}`}>{badge.label}</Badge>
+                  </div>
+                </div>
+              );
+            })}
+            {terminalBookings.length > 50 ? (
+              <p className="text-[10px] text-muted-foreground">
+                แสดง 50 จาก {terminalBookings.length} รายการในประวัติ
+              </p>
+            ) : null}
+          </div>
+        </details>
       ) : null}
 
       {/*

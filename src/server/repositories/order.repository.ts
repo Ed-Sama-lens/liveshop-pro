@@ -12,7 +12,11 @@ export interface OrderItemRow {
   readonly quantity: number;
   readonly unitPrice: string;
   readonly totalPrice: string;
-  readonly product: { readonly name: string; readonly stockCode: string };
+  // Tier 3.9-Fix-D1 — Surface stockCode + saleCode so the Order detail
+  // page can show the admin-facing identifiers Boss uses during live
+  // selling (saleCode = displayCode = code customer typed). stockCode
+  // = catalog ID for physical inventory.
+  readonly product: { readonly name: string; readonly stockCode: string; readonly saleCode: string | null };
   readonly variant: { readonly sku: string; readonly attributes: Record<string, string> };
 }
 
@@ -49,7 +53,7 @@ function serializeOrderItem(item: {
   quantity: number;
   unitPrice: { toString(): string };
   totalPrice: { toString(): string };
-  product: { name: string; stockCode: string };
+  product: { name: string; stockCode: string; saleCode: string | null };
   variant: { sku: string; attributes: unknown };
 }): OrderItemRow {
   return Object.freeze({
@@ -59,7 +63,11 @@ function serializeOrderItem(item: {
     quantity: item.quantity,
     unitPrice: item.unitPrice.toString(),
     totalPrice: item.totalPrice.toString(),
-    product: Object.freeze({ name: item.product.name, stockCode: item.product.stockCode }),
+    product: Object.freeze({
+      name: item.product.name,
+      stockCode: item.product.stockCode,
+      saleCode: item.product.saleCode,
+    }),
     variant: Object.freeze({
       sku: item.variant.sku,
       attributes: item.variant.attributes as Record<string, string>,
@@ -94,7 +102,7 @@ function serializeOrder(o: {
     quantity: number;
     unitPrice: { toString(): string };
     totalPrice: { toString(): string };
-    product: { name: string; stockCode: string };
+    product: { name: string; stockCode: string; saleCode: string | null };
     variant: { sku: string; attributes: unknown };
   }>;
   _count?: { items: number };
@@ -178,7 +186,7 @@ const DETAIL_INCLUDE = {
   customer: { select: { id: true, name: true } },
   items: {
     include: {
-      product: { select: { name: true, stockCode: true } },
+      product: { select: { name: true, stockCode: true, saleCode: true } },
       variant: { select: { sku: true, attributes: true } },
     },
     orderBy: { id: 'asc' as const },
