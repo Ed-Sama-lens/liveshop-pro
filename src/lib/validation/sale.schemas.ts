@@ -250,3 +250,18 @@ export const quickBulkProductCodesBodySchema = z
   });
 
 export type QuickBulkProductCodesBody = z.infer<typeof quickBulkProductCodesBodySchema>;
+
+// ─── GET /api/sale/summary (Tier 3.9-G3) ──────────────────────────────────
+//
+// Read-only daily summary. Single saleDate only in this iteration;
+// range query (`from` / `to`) is a separate schema added in the next
+// PR per docs/superpowers/2026-05-23-sale-operations-summary-design.md
+// §11 implementation sequence.
+
+export const saleSummaryQuerySchema = z.object({
+  saleDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'saleDate must be YYYY-MM-DD'),
+});
+
+export type SaleSummaryQuery = z.infer<typeof saleSummaryQuerySchema>;
