@@ -101,6 +101,12 @@ test.describe('production unauth smoke', () => {
     expect(res.status()).toBe(401);
   });
 
+  // Tier 3.9-G3 (PR #70) — read-only daily summary endpoint.
+  test('GET /api/sale/summary (unauth) returns 401', async ({ request }) => {
+    const res = await request.get('/api/sale/summary?saleDate=2026-05-23');
+    expect(res.status()).toBe(401);
+  });
+
   test('GET /api/storefront/<bogus>/products returns 404 not 500', async ({ request }) => {
     const res = await request.get('/api/storefront/nonexistent-shop-slug-xyz/products');
     expect(res.status()).toBe(404);
