@@ -265,3 +265,45 @@ export const saleSummaryQuerySchema = z.object({
 });
 
 export type SaleSummaryQuery = z.infer<typeof saleSummaryQuerySchema>;
+
+// ─── GET /api/sale/summary range mode (Tier 3.9-G5) ───────────────────────
+//
+// Range cap prevents accidental quarter-wide stampede. 31 days mirrors a
+// month worth of admin reporting. Larger ranges require multiple calls.
+
+export const SALE_SUMMARY_MAX_RANGE_DAYS = 31;
+
+export const saleSummaryRangeQuerySchema = z
+  .object({
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'from must be YYYY-MM-DD'),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'to must be YYYY-MM-DD'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.to < data.from) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'to must be >= from',
+        path: ['to'],
+      });
+      return;
+    }
+    // String compare on YYYY-MM-DD is lexicographic = chronological.
+    // Count inclusive days between from and to.
+    const fromDate = new Date(`${data.from}T00:00:00Z`);
+    const toDate = new Date(`${data.to}T00:00:00Z`);
+    const dayCount =
+      Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000) + 1;
+    if (dayCount > SALE_SUMMARY_MAX_RANGE_DAYS) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Range too large: ${dayCount} days > ${SALE_SUMMARY_MAX_RANGE_DAYS}`,
+        path: ['to'],
+      });
+    }
+  });
+
+export type SaleSummaryRangeQuery = z.infer<typeof saleSummaryRangeQuerySchema>;

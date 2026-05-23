@@ -6,6 +6,9 @@ import {
   foldOrdersByBp,
   deriveStockFlags,
   aggregateTotals,
+  enumerateDateRange,
+  foldByCodeAcrossDays,
+  aggregateRangeTotals,
   type BookingGroupRow,
   type ReservationGroupRow,
   type OrderItemAggRow,
@@ -13,6 +16,7 @@ import {
   type OrdersBlock,
   type StockFlags,
   type SummaryItemTotals,
+  type RangeTotals,
 } from '@/lib/sale/summary.helpers';
 
 /**
@@ -213,6 +217,134 @@ async function fetchOrderItemRows(
   return out;
 }
 
+type InternalSummaryItem = SummaryStockItem & {
+  readonly _orderIds: ReadonlySet<string>;
+};
+
+/**
+ * Internal: compute per-day summary with `_orderIds` exposed for
+ * downstream aggregation (range mode + public single-day mode share
+ * this).
+ */
+async function summarizeByDateInternal(
+  shopId: string,
+  saleDate: string
+): Promise<{
+  readonly saleDate: string;
+  readonly items: readonly SummaryStockItem[];
+  readonly internalItems: readonly InternalSummaryItem[];
+  readonly totals: SummaryItemTotals;
+}> {
+  const parsedDate = parseSaleDate(saleDate);
+
+  const bpRows = await fetchBpRows(shopId, parsedDate);
+  const bpIds = bpRows.map((r) => r.id);
+  const variantIds = bpRows
+    .map((r) => r.variantId)
+    .filter((v): v is string => typeof v === 'string');
+
+  // BP → variant map for OrderItem reverse lookup.
+  const bpVariantMap = new Map<string, string>();
+  for (const bp of bpRows) {
+    if (bp.variantId !== null) bpVariantMap.set(bp.id, bp.variantId);
+  }
+
+  // Fan out the three aggregation queries in parallel since they touch
+  // disjoint tables.
+  const [bookingGroups, reservationGroups, orderItemRows] = await Promise.all([
+    fetchBookingGroups(shopId, bpIds),
+    fetchReservationGroups(variantIds),
+    fetchOrderItemRows(bpIds, bpVariantMap),
+  ]);
+
+  const internalItems: InternalSummaryItem[] = bpRows
+    .filter((bp): bp is typeof bp & { variant: NonNullable<typeof bp.variant> } =>
+      bp.variant !== null
+    )
+    .map((bp) => {
+      const reservedQty = foldReservedQty(reservationGroups, bp.variant.id);
+      const stock = deriveStockFlags(
+        bp.variant.quantity,
+        reservedQty,
+        bp.variant.lowStockAt
+      );
+      const bookings = foldBookingsByStatus(bookingGroups, bp.id);
+      const ordersWithIds = foldOrdersByBp(orderItemRows, bp.id);
+      const { orderIds, ...orders } = ordersWithIds;
+      const unitPrice = formatMoney2(bp.priceOverride ?? bp.variant.price);
+
+      return Object.freeze({
+        broadcastProductId: bp.id,
+        displayCode: bp.displayCode,
+        productId: bp.productId,
+        productName: bp.product.name,
+        stockCode: bp.product.stockCode,
+        saleCode: bp.product.saleCode,
+        variantId: bp.variant.id,
+        sku: bp.variant.sku,
+        unitPrice,
+        stock,
+        bookings,
+        orders,
+        _orderIds: orderIds,
+      });
+    });
+
+  const totals = aggregateTotals(
+    internalItems.map((it) => ({
+      bookings: it.bookings,
+      orders: it.orders,
+      orderIds: it._orderIds,
+    }))
+  );
+
+  const items: SummaryStockItem[] = internalItems.map((it) => {
+    const { _orderIds, ...publicItem } = it;
+    void _orderIds;
+    return publicItem;
+  });
+
+  return { saleDate, items, internalItems, totals };
+}
+
+// ─── Range mode (Tier 3.9-G5) ─────────────────────────────────────────────
+
+export interface SaleSummaryRangeDay {
+  readonly saleDate: string;
+  readonly items: readonly SummaryStockItem[];
+  readonly totals: SummaryItemTotals;
+}
+
+export interface SaleSummaryRangeByCodeItem {
+  readonly displayCode: string;
+  readonly productName: string;
+  readonly stockCode: string;
+  readonly saleCode: string | null;
+  readonly bookings: BookingsBlock;
+  readonly orders: OrdersBlock;
+  readonly appearedOn: readonly string[];
+}
+
+export interface SaleSummaryRangeResult {
+  readonly from: string;
+  readonly to: string;
+  readonly shopId: string;
+  readonly currency: 'MYR';
+  readonly days: readonly SaleSummaryRangeDay[];
+  readonly byCode: readonly SaleSummaryRangeByCodeItem[];
+  readonly totals: RangeTotals;
+  readonly stockSnapshotNote: string;
+}
+
+export interface SummarizeByRangeInput {
+  readonly shopId: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+const STOCK_SNAPSHOT_NOTE =
+  'Stock fields on `days[].items[].stock` are point-in-time (current) snapshots, NOT historical state at saleDate. ByCode rollup deliberately omits stock for this reason. Range totals reflect booking/order/RM accumulation across the range.';
+
 export const saleSummaryRepository = Object.freeze({
   /**
    * Aggregate a single saleDate summary for one shop.
@@ -221,86 +353,7 @@ export const saleSummaryRepository = Object.freeze({
    */
   async summarizeByDate(input: SummarizeByDateInput): Promise<SaleSummaryResult> {
     const { shopId, saleDate } = input;
-    const parsedDate = parseSaleDate(saleDate);
-
-    const bpRows = await fetchBpRows(shopId, parsedDate);
-    const bpIds = bpRows.map((r) => r.id);
-    const variantIds = bpRows
-      .map((r) => r.variantId)
-      .filter((v): v is string => typeof v === 'string');
-
-    // BP → variant map for OrderItem reverse lookup.
-    const bpVariantMap = new Map<string, string>();
-    for (const bp of bpRows) {
-      if (bp.variantId !== null) bpVariantMap.set(bp.id, bp.variantId);
-    }
-
-    // Fan out the three aggregation queries in parallel since they
-    // touch disjoint tables.
-    const [bookingGroups, reservationGroups, orderItemRows] = await Promise.all([
-      fetchBookingGroups(shopId, bpIds),
-      fetchReservationGroups(variantIds),
-      fetchOrderItemRows(bpIds, bpVariantMap),
-    ]);
-
-    // Build internal items that carry `orderIds` so `aggregateTotals`
-    // can compute the global distinct order count (open question 3
-    // verdict 2026-05-23 Option A). The public response strips
-    // `orderIds` from `orders` since `Set<string>` does not survive
-    // JSON serialization cleanly and is an internal concern.
-    type InternalItem = SummaryStockItem & {
-      readonly _orderIds: ReadonlySet<string>;
-    };
-
-    const internalItems: InternalItem[] = bpRows
-      .filter((bp): bp is typeof bp & { variant: NonNullable<typeof bp.variant> } =>
-        bp.variant !== null
-      )
-      .map((bp) => {
-        const reservedQty = foldReservedQty(reservationGroups, bp.variant.id);
-        const stock = deriveStockFlags(
-          bp.variant.quantity,
-          reservedQty,
-          bp.variant.lowStockAt
-        );
-        const bookings = foldBookingsByStatus(bookingGroups, bp.id);
-        const ordersWithIds = foldOrdersByBp(orderItemRows, bp.id);
-        const { orderIds, ...orders } = ordersWithIds;
-        const unitPrice = formatMoney2(bp.priceOverride ?? bp.variant.price);
-
-        return Object.freeze({
-          broadcastProductId: bp.id,
-          displayCode: bp.displayCode,
-          productId: bp.productId,
-          productName: bp.product.name,
-          stockCode: bp.product.stockCode,
-          saleCode: bp.product.saleCode,
-          variantId: bp.variant.id,
-          sku: bp.variant.sku,
-          unitPrice,
-          stock,
-          bookings,
-          orders,
-          _orderIds: orderIds,
-        });
-      });
-
-    // aggregateTotals reads `orderIds` (optional on the public
-    // SummaryItem type) to compute the distinct global count.
-    const totals = aggregateTotals(
-      internalItems.map((it) => ({
-        bookings: it.bookings,
-        orders: it.orders,
-        orderIds: it._orderIds,
-      }))
-    );
-
-    // Strip _orderIds from the public response.
-    const items: SummaryStockItem[] = internalItems.map((it) => {
-      const { _orderIds, ...publicItem } = it;
-      void _orderIds;
-      return publicItem;
-    });
+    const { items, totals } = await summarizeByDateInternal(shopId, saleDate);
 
     return Object.freeze({
       saleDate,
@@ -310,4 +363,91 @@ export const saleSummaryRepository = Object.freeze({
       totals,
     });
   },
+
+  /**
+   * Aggregate summary across a date range.
+   *
+   * Fans out single-day computation across each day in [from, to]
+   * inclusive. The route layer enforces the range cap; this method is
+   * called with already-validated input.
+   *
+   * Returns per-day items + per-code rollup across the range + global
+   * totals. Stock fields on per-day items are point-in-time snapshots
+   * (see `stockSnapshotNote`); byCode rollup omits stock entirely.
+   */
+  async summarizeByRange(
+    input: SummarizeByRangeInput
+  ): Promise<SaleSummaryRangeResult> {
+    const { shopId, from, to } = input;
+    const dates = enumerateDateRange(from, to);
+
+    // Run per-day computations in parallel. Each is bounded by the
+    // existing single-day query plan (4 queries / day).
+    const perDay = await Promise.all(
+      dates.map((d) => summarizeByDateInternal(shopId, d))
+    );
+
+    const days: SaleSummaryRangeDay[] = perDay.map((d) => ({
+      saleDate: d.saleDate,
+      items: d.items,
+      totals: d.totals,
+    }));
+
+    // Flatten per-day internal items into (saleDate, item) pairs for the
+    // byCode rollup. internal items carry `_orderIds` so global distinct
+    // counts work.
+    const pairs: { saleDate: string; item: ReturnType<typeof toByCodeInput> }[] = [];
+    for (const d of perDay) {
+      for (const it of d.internalItems) {
+        pairs.push({ saleDate: d.saleDate, item: toByCodeInput(it) });
+      }
+    }
+    const byCodeRaw = foldByCodeAcrossDays(pairs);
+
+    // Strip orderIds from public byCode response.
+    const byCode: SaleSummaryRangeByCodeItem[] = byCodeRaw.map((c) => {
+      const { orderIds, ...rest } = c;
+      void orderIds;
+      return rest;
+    });
+
+    const totals = aggregateRangeTotals(byCodeRaw, dates.length);
+
+    return Object.freeze({
+      from,
+      to,
+      shopId,
+      currency: 'MYR' as const,
+      days: Object.freeze(days),
+      byCode: Object.freeze(byCode),
+      totals,
+      stockSnapshotNote: STOCK_SNAPSHOT_NOTE,
+    });
+  },
 });
+
+function toByCodeInput(it: InternalSummaryItem): {
+  displayCode: string;
+  productName: string;
+  stockCode: string;
+  saleCode: string | null;
+  bookings: BookingsBlock;
+  orders: OrdersBlock;
+  orderIds: ReadonlySet<string>;
+} {
+  return {
+    displayCode: it.displayCode,
+    productName: it.productName,
+    stockCode: it.stockCode,
+    saleCode: it.saleCode,
+    bookings: it.bookings,
+    orders: it.orders,
+    orderIds: it._orderIds,
+  };
+}
+
+// Re-export types consumed by the route + UI.
+export type {
+  ByCodeItem,
+  RangeTotals,
+} from '@/lib/sale/summary.helpers';
