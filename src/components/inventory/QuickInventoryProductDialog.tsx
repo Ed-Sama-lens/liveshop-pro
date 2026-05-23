@@ -22,30 +22,33 @@ import {
 } from '@/components/shared/quick-product-form.types';
 
 /**
- * QuickInventoryProductDialog — Tier 3.9-D (2026-05-23).
+ * QuickInventoryProductDialog — Tier 3.9-D + 3.9-D2-B (2026-05-23).
  *
  * Boss inventory creation pattern (mirrors `/sale` quick-create UX).
- * Creates ONE Product with ONE default Variant by POSTing to the
- * existing `/api/products` route. Does NOT create a BroadcastProduct
- * row (no saleDate involved on the inventory side).
  *
- * Bulk Start/End No. is intentionally hidden in this PR (D1). Bulk
- * inventory create requires a new repository method + API route to
- * loop the existing single-product create — deferred to PR 3.9-D2.
- * The shared `QuickProductFormFields` already supports bulk visually;
- * this dialog simply does not pass `showBulkRange`.
+ * Two submit modes, switched via the "สร้างหลายรหัส / Bulk range"
+ * toggle (default OFF):
  *
- * Image upload is also deferred for this dialog. Real upload uses
- * `POST /api/products/[id]/images` after the product row is created,
- * so a flat URL field on a brand-new product would not match the R2
- * path convention. Admin can add images on the inventory edit page
- * after creating the product.
+ *   - SINGLE (default) — creates ONE Product with ONE default Variant
+ *     by POSTing to the existing `/api/products` route. Does NOT
+ *     create a BroadcastProduct row.
+ *   - BULK (Tier 3.9-D2-B) — creates N Product + ProductVariant pairs
+ *     in one transaction by POSTing to
+ *     `/api/inventory/quick-product-bulk` (Tier 3.9-D2-A). All-or-
+ *     nothing. Cap = QUICK_BULK_MAX_RANGE (100). Still does NOT create
+ *     BroadcastProduct rows. Still no saleDate involved.
  *
- * Defaults align with the inventory product schema in
- * `src/lib/validation/product.schemas.ts`:
+ * Image upload is deferred in both modes for this dialog. Real upload
+ * uses `POST /api/products/[id]/images` after the product row is
+ * created. Admin can add images on the inventory edit page after
+ * creating the product(s).
+ *
+ * Defaults align with the inventory product / inventory bulk schemas
+ * (`src/lib/validation/product.schemas.ts` for single,
+ *  `src/lib/validation/inventory.schemas.ts` for bulk):
  *   - name optional (server fills placeholder from saleCode/stockCode)
  *   - price empty → '0'
- *   - quantity defaults to 1
+ *   - quantity defaults to 1 (0 also valid)
  *   - category optional
  *
  * Old `ProductForm` remains available on `/inventory/new` behind an
@@ -61,6 +64,55 @@ export interface QuickInventoryProductDialogProps {
   readonly triggerLabel?: string;
   /** Render the dialog open from mount (useful for tests / inline use). */
   readonly defaultOpen?: boolean;
+}
+
+/**
+ * Build the payload for POST /api/inventory/quick-product-bulk from
+ * the form state. Used when the bulk-range toggle is ON.
+ *
+ * Pure — extracted so unit tests can verify shape without rendering.
+ *
+ * Shape mirrors `inventoryBulkBodySchema`. Sale-only fields (saleDate,
+ * imageUrl) are NEVER included. `variants[]` is NEVER included —
+ * variant fields are flat at the top level.
+ */
+export function buildInventoryBulkPayload(
+  form: QuickProductFormState
+): Record<string, unknown> {
+  const stockCodeBase = form.stockCodeBase.trim();
+  const saleCodeBase = form.saleCodeBase.trim();
+  const name = form.productName.trim();
+  const description = form.productDetails.trim();
+  const categoryId =
+    form.categoryId && form.categoryId !== '__none__' ? form.categoryId : undefined;
+
+  const priceRaw = form.price.trim();
+  const price = priceRaw === '' ? '0' : priceRaw;
+  const costRaw = form.cost.trim();
+  const quantity = form.quantity === '' ? 1 : parseInt(form.quantity, 10);
+  const lowStockAtRaw = form.lowStockAt.trim();
+  const lowStockAt = lowStockAtRaw === '' ? undefined : parseInt(lowStockAtRaw, 10);
+
+  const startNoRaw = form.startNo.trim();
+  const endNoRaw = form.endNo.trim();
+  const startNo = startNoRaw === '' ? undefined : parseInt(startNoRaw, 10);
+  const endNo = endNoRaw === '' ? undefined : parseInt(endNoRaw, 10);
+
+  const payload: Record<string, unknown> = {
+    stockCodeBase,
+    saleCodeBase,
+    price,
+    quantity,
+  };
+  if (name !== '') payload.productName = name;
+  if (description !== '') payload.productDetails = description;
+  if (categoryId !== undefined) payload.categoryId = categoryId;
+  if (costRaw !== '') payload.cost = costRaw;
+  if (lowStockAt !== undefined) payload.lowStockAt = lowStockAt;
+  if (startNo !== undefined) payload.startNo = startNo;
+  if (endNo !== undefined) payload.endNo = endNo;
+
+  return payload;
 }
 
 /**
@@ -119,19 +171,34 @@ export function QuickInventoryProductDialog({
   const router = useRouter();
   const [open, setOpen] = useState(defaultOpen);
   const [form, setForm] = useState<QuickProductFormState>({ ...EMPTY_QUICK_PRODUCT_FORM });
+  const [bulkMode, setBulkMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, readonly string[]>>({});
   const [topLevelError, setTopLevelError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Reset form whenever dialog closes
   useEffect(() => {
     if (!open) {
       setForm({ ...EMPTY_QUICK_PRODUCT_FORM });
+      setBulkMode(false);
       setFieldErrors({});
       setTopLevelError(null);
+      setSuccessMessage(null);
       setIsSubmitting(false);
     }
   }, [open]);
+
+  // Reset bulk range fields when toggling bulk mode OFF to avoid stale
+  // startNo/endNo carrying over into single-mode submit.
+  function toggleBulkMode(next: boolean) {
+    setBulkMode(next);
+    if (!next) {
+      setForm((prev) => ({ ...prev, startNo: '', endNo: '' }));
+    }
+    setFieldErrors({});
+    setTopLevelError(null);
+  }
 
   function updateField<K extends keyof QuickProductFormState>(
     key: K,
@@ -145,11 +212,17 @@ export function QuickInventoryProductDialog({
     setIsSubmitting(true);
     setFieldErrors({});
     setTopLevelError(null);
+    setSuccessMessage(null);
 
-    const payload = buildInventoryCreatePayload(form);
+    const endpoint = bulkMode
+      ? '/api/inventory/quick-product-bulk'
+      : '/api/products';
+    const payload = bulkMode
+      ? buildInventoryBulkPayload(form)
+      : buildInventoryCreatePayload(form);
 
     try {
-      const res = await fetch('/api/products', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'same-origin',
@@ -157,7 +230,7 @@ export function QuickInventoryProductDialog({
       });
       const body = (await res.json()) as {
         success?: boolean;
-        data?: { id?: string };
+        data?: { id?: string; createdCount?: number };
         error?: string;
         fields?: Record<string, string[]>;
       };
@@ -167,10 +240,21 @@ export function QuickInventoryProductDialog({
         return;
       }
 
+      // Bulk mode: show short success summary in-dialog so admin sees
+      // createdCount before closing. Single mode keeps the previous
+      // close-on-success UX.
+      if (bulkMode && typeof body.data?.createdCount === 'number') {
+        setSuccessMessage(`สร้างสินค้า ${body.data.createdCount} รายการสำเร็จ`);
+        onCreated?.();
+        router.refresh();
+        // Reset form for next bulk batch, keep dialog open so admin can
+        // continue adding ranges without re-opening.
+        setForm({ ...EMPTY_QUICK_PRODUCT_FORM });
+        return;
+      }
+
       setOpen(false);
       onCreated?.();
-      // Refresh the inventory list so the new product appears
-      // immediately when the user lands back on /inventory.
       router.refresh();
     } catch (err) {
       setTopLevelError(err instanceof Error ? err.message : 'Network error');
@@ -203,12 +287,45 @@ export function QuickInventoryProductDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex items-center gap-2 rounded-md border border-dashed border-muted bg-muted/30 px-3 py-2">
+            <input
+              type="checkbox"
+              id="qid-bulk-mode"
+              checked={bulkMode}
+              onChange={(e) => toggleBulkMode(e.target.checked)}
+              disabled={isSubmitting}
+              className="h-4 w-4"
+              aria-label="bulk-range-toggle"
+            />
+            <label
+              htmlFor="qid-bulk-mode"
+              className="cursor-pointer select-none text-sm font-medium"
+            >
+              สร้างหลายรหัส (Bulk range)
+            </label>
+            {bulkMode && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                สูงสุด 100 รายการ / รอบ
+              </span>
+            )}
+          </div>
+
           <QuickProductFormFields
             form={form}
             onChange={updateField}
             fieldErrors={fieldErrors}
             categories={categories}
+            showBulkRange={bulkMode}
           />
+
+          {successMessage !== null && (
+            <div
+              role="status"
+              className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700"
+            >
+              {successMessage}
+            </div>
+          )}
 
           {topLevelError !== null && (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
