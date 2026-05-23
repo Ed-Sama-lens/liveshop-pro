@@ -20,6 +20,7 @@ import {
 import { SaleCustomerPanelPlaceholder } from './SaleCustomerPanelPlaceholder';
 import { SaleOrderConversionPlaceholder } from './SaleOrderConversionPlaceholder';
 import { SaleInboxPlaceholder } from './SaleInboxPlaceholder';
+import { SaleSummaryPanel } from './SaleSummaryPanel';
 import {
   SaleSourceFilterChips,
   type SourceFilterValue,
@@ -371,6 +372,17 @@ export function SaleWorkspaceShell() {
           />
         </CardContent>
       </Card>
+
+      {/* Tier 3.9-G6 — Daily summary strip.
+          Compact read-only health panel above the primary work surface so
+          admin can glance at today's booking + order + stock totals
+          without manual counting. */}
+      <ErrorBoundarySection>
+        <SaleSummaryPanel
+          saleDate={selectedSaleDate}
+          refetchToken={refetchToken}
+        />
+      </ErrorBoundarySection>
 
       {/* Primary work surface — products + bookings.
           Operators spend the most time here during a live sale, so these
