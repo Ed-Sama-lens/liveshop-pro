@@ -26,6 +26,7 @@
     "verify:expire-reservations-cron": "tsx scripts/verify-expire-reservations-cron.ts",
     "verify:sale:d4-d6": "tsx scripts/verify-sale-d4-d6-functional-flow.ts",
     "verify:sale:quick-bulk": "tsx scripts/verify-sale-quick-bulk-product-codes.ts",
+    "verify:inventory:bulk": "tsx scripts/verify-inventory-bulk-product-codes.ts",
     "check:types": "tsc --noEmit",
     "test:sale:routes": "vitest run tests/unit/app/api/sale",
     "test:sale:components": "vitest run tests/unit/components/sale tests/unit/components/shared/SidebarNav.test.ts"
