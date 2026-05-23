@@ -30,12 +30,18 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # Copy built assets
+# Note (Tier 3.9-G1, 2026-05-23): Prisma 7 generator outputs to
+# `src/generated/prisma` (see prisma/schema.prisma `output = "../src/generated/prisma"`).
+# Older Prisma 5/6 used `node_modules/.prisma` + `node_modules/@prisma`,
+# but those paths do not exist in this codebase. COPYing them caused
+# `failed to calculate checksum of ref ...: "/app/node_modules/.prisma": not found`
+# on the Docker Build CI job. The generated client lives in
+# `src/generated/prisma` and is copied via the `src/generated` line
+# below.
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/src/generated ./src/generated
 
 # Create uploads directory
