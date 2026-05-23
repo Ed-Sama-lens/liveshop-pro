@@ -129,8 +129,12 @@ describe('sumMoney2', () => {
 });
 
 describe('foldOrdersByBp', () => {
-  it('returns EMPTY_ORDERS_BLOCK when no rows match', () => {
-    expect(foldOrdersByBp([], 'bp-1')).toEqual(EMPTY_ORDERS_BLOCK);
+  it('returns empty block (zeros + empty orderIds) when no rows match', () => {
+    const block = foldOrdersByBp([], 'bp-1');
+    expect(block.orderCount).toBe(0);
+    expect(block.orderedQuantity).toBe(0);
+    expect(block.grossTotal).toBe(EMPTY_ORDERS_BLOCK.grossTotal);
+    expect(block.orderIds.size).toBe(0);
   });
 
   it('dedupes orderCount across rows of the same orderId', () => {
@@ -189,7 +193,41 @@ describe('foldOrdersByBp', () => {
         totalPrice: '9999.00',
       },
     ];
-    expect(foldOrdersByBp(rows, 'bp-1')).toEqual(EMPTY_ORDERS_BLOCK);
+    const block = foldOrdersByBp(rows, 'bp-1');
+    expect(block.orderCount).toBe(0);
+    expect(block.orderedQuantity).toBe(0);
+    expect(block.grossTotal).toBe(EMPTY_ORDERS_BLOCK.grossTotal);
+    expect(block.orderIds.size).toBe(0);
+  });
+
+  it('exposes orderIds set for global distinct-count aggregation (Option A)', () => {
+    const rows: OrderItemAggRow[] = [
+      {
+        orderId: 'ord-1',
+        variantId: 'v-1',
+        broadcastProductId: 'bp-1',
+        quantity: 1,
+        totalPrice: '10.00',
+      },
+      {
+        orderId: 'ord-2',
+        variantId: 'v-1',
+        broadcastProductId: 'bp-1',
+        quantity: 1,
+        totalPrice: '10.00',
+      },
+      {
+        orderId: 'ord-1',
+        variantId: 'v-2',
+        broadcastProductId: 'bp-1',
+        quantity: 1,
+        totalPrice: '10.00',
+      },
+    ];
+    const block = foldOrdersByBp(rows, 'bp-1');
+    expect(block.orderIds.size).toBe(2);
+    expect(block.orderIds.has('ord-1')).toBe(true);
+    expect(block.orderIds.has('ord-2')).toBe(true);
   });
 });
 
@@ -200,12 +238,13 @@ describe('aggregateTotals', () => {
       broadcastProductCount: 0,
       totalBookings: 0,
       totalOrders: 0,
+      totalOrderTouches: 0,
       totalOrderedQuantity: 0,
       totalGross: '0.00',
     });
   });
 
-  it('sums booking totals and order rollups across BPs', () => {
+  it('sums booking totals and order rollups across BPs (legacy items without orderIds count touches only)', () => {
     const items: SummaryItem[] = [
       {
         bookings: {
@@ -233,9 +272,91 @@ describe('aggregateTotals', () => {
     const totals = aggregateTotals(items);
     expect(totals.broadcastProductCount).toBe(2);
     expect(totals.totalBookings).toBe(10);
-    expect(totals.totalOrders).toBe(3);
+    // No orderIds passed → totalOrders is 0 (distinct count from union
+    // of empty sets is 0). totalOrderTouches preserves the sum (3).
+    expect(totals.totalOrders).toBe(0);
+    expect(totals.totalOrderTouches).toBe(3);
     expect(totals.totalOrderedQuantity).toBe(3);
     expect(totals.totalGross).toBe('35.50');
+  });
+
+  describe('Option A — totalOrders is distinct count across BPs (open question 3 verdict)', () => {
+    it('one order touching two BPs → totalOrders = 1, totalOrderTouches = 2', () => {
+      const items: SummaryItem[] = [
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 2, grossTotal: '20.00' },
+          orderIds: new Set(['ord-shared']),
+        },
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-shared']),
+        },
+      ];
+      const totals = aggregateTotals(items);
+      expect(totals.totalOrders).toBe(1);
+      expect(totals.totalOrderTouches).toBe(2);
+      expect(totals.totalOrderedQuantity).toBe(3);
+      expect(totals.totalGross).toBe('30.00');
+    });
+
+    it('two separate orders across two BPs → totalOrders = 2, totalOrderTouches = 2', () => {
+      const items: SummaryItem[] = [
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-A']),
+        },
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-B']),
+        },
+      ];
+      const totals = aggregateTotals(items);
+      expect(totals.totalOrders).toBe(2);
+      expect(totals.totalOrderTouches).toBe(2);
+    });
+
+    it('mixed: one shared order + one unique → totalOrders = 2, totalOrderTouches = 3', () => {
+      const items: SummaryItem[] = [
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 2, total: 2 },
+          orders: { orderCount: 2, orderedQuantity: 2, grossTotal: '20.00' },
+          orderIds: new Set(['ord-shared', 'ord-A']),
+        },
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-shared']),
+        },
+      ];
+      const totals = aggregateTotals(items);
+      expect(totals.totalOrders).toBe(2);
+      expect(totals.totalOrderTouches).toBe(3);
+    });
+
+    it('per-item orders.orderCount stays per-code-distinct (not affected by global dedup)', () => {
+      // Each per-item count remains the count of distinct orders touching
+      // that single BP. Aggregation only affects the totals.
+      const items: SummaryItem[] = [
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-shared']),
+        },
+        {
+          bookings: { pendingReview: 0, confirmed: 0, cancelled: 0, expired: 0, convertedToOrder: 1, total: 1 },
+          orders: { orderCount: 1, orderedQuantity: 1, grossTotal: '10.00' },
+          orderIds: new Set(['ord-shared']),
+        },
+      ];
+      expect(items[0].orders.orderCount).toBe(1);
+      expect(items[1].orders.orderCount).toBe(1);
+      const totals = aggregateTotals(items);
+      expect(totals.totalOrders).toBe(1);
+    });
   });
 });
 

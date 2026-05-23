@@ -81,6 +81,7 @@ const SAMPLE_RESULT = Object.freeze({
     broadcastProductCount: 0,
     totalBookings: 0,
     totalOrders: 0,
+    totalOrderTouches: 0,
     totalOrderedQuantity: 0,
     totalGross: '0.00',
   },
@@ -206,6 +207,7 @@ describe('GET /api/sale/summary — Tier 3.9-G3', () => {
         broadcastProductCount: 0,
         totalBookings: 0,
         totalOrders: 0,
+        totalOrderTouches: 0,
         totalOrderedQuantity: 0,
       });
     });

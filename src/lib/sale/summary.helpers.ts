@@ -163,13 +163,22 @@ export function sumMoney2(values: readonly string[]): string {
  * orderCount = distinct order count whose items match this BP.
  * orderedQuantity = sum item quantity.
  * grossTotal = sum item totalPrice (RM).
+ * orderIds = distinct order ID set, surfaced so `aggregateTotals` can
+ *            compute a global distinct count across BPs (open question
+ *            3 verdict: Option A — `totals.totalOrders` MUST be the
+ *            true distinct order count, not a per-BP sum).
  */
 export function foldOrdersByBp(
   rows: readonly OrderItemAggRow[],
   broadcastProductId: string
-): OrdersBlock {
+): OrdersBlock & { readonly orderIds: ReadonlySet<string> } {
   const matching = rows.filter((r) => r.broadcastProductId === broadcastProductId);
-  if (matching.length === 0) return EMPTY_ORDERS_BLOCK;
+  if (matching.length === 0) {
+    return Object.freeze({
+      ...EMPTY_ORDERS_BLOCK,
+      orderIds: new Set<string>(),
+    });
+  }
   const distinctOrders = new Set<string>();
   let orderedQuantity = 0;
   const totals: string[] = [];
@@ -182,13 +191,27 @@ export function foldOrdersByBp(
     orderCount: distinctOrders.size,
     orderedQuantity,
     grossTotal: sumMoney2(totals),
+    orderIds: distinctOrders,
   });
 }
 
 export interface SummaryItemTotals {
   readonly broadcastProductCount: number;
   readonly totalBookings: number;
+  /**
+   * Distinct order count across all BPs. A single order with items
+   * from two BPs counts as 1 here (not 2). Open question 3 verdict
+   * 2026-05-23: Option A — admin-facing field must mean real distinct
+   * orders.
+   */
   readonly totalOrders: number;
+  /**
+   * Sum of per-BP `orders.orderCount` across all items. A single order
+   * touching two BPs counts as 2 here. Useful when admin wants to see
+   * "how many code-order intersections happened" vs "how many actual
+   * orders shipped". Always >= `totalOrders`.
+   */
+  readonly totalOrderTouches: number;
   readonly totalOrderedQuantity: number;
   readonly totalGross: string;
 }
@@ -196,34 +219,50 @@ export interface SummaryItemTotals {
 export interface SummaryItem {
   readonly bookings: BookingsBlock;
   readonly orders: OrdersBlock;
+  /**
+   * Distinct order IDs for this item's BP. Required for the global
+   * distinct-count fold in `aggregateTotals`. Optional in the public
+   * type so existing callers (tests, snapshots) keep compiling, but
+   * production callers always populate it via `foldOrdersByBp`.
+   */
+  readonly orderIds?: ReadonlySet<string>;
 }
 
 /**
  * Aggregate top-level totals across all per-BP summary items.
  *
- * - totalOrders dedups across BPs because a single Order can contain
- *   items from multiple BPs (sale-date scoped). We sum orderCount per
- *   BP — that over-counts by design; documented in the design doc §3
- *   open question 3. Boss verdict pending; for now we sum and label
- *   the field clearly.
+ * Open question 3 verdict 2026-05-23: `totalOrders` is the distinct
+ * order count across BPs (Option A). `totalOrderTouches` carries the
+ * old sum-of-per-BP behavior under an unambiguous name so admin can
+ * still see "how many code-order intersections" when relevant.
+ *
+ * Distinct count requires each `SummaryItem` to carry `orderIds`.
+ * Items without `orderIds` (legacy callers / snapshot tests) only
+ * contribute via `orders.orderCount` to `totalOrderTouches`; their
+ * `totalOrders` contribution is zero.
  */
 export function aggregateTotals(
   items: readonly SummaryItem[]
 ): SummaryItemTotals {
   let totalBookings = 0;
-  let totalOrders = 0;
+  let totalOrderTouches = 0;
   let totalOrderedQuantity = 0;
   const grossSums: string[] = [];
+  const distinctOrderIds = new Set<string>();
   for (const item of items) {
     totalBookings += item.bookings.total;
-    totalOrders += item.orders.orderCount;
+    totalOrderTouches += item.orders.orderCount;
     totalOrderedQuantity += item.orders.orderedQuantity;
     grossSums.push(item.orders.grossTotal);
+    if (item.orderIds !== undefined) {
+      for (const id of item.orderIds) distinctOrderIds.add(id);
+    }
   }
   return Object.freeze({
     broadcastProductCount: items.length,
     totalBookings,
-    totalOrders,
+    totalOrders: distinctOrderIds.size,
+    totalOrderTouches,
     totalOrderedQuantity,
     totalGross: sumMoney2(grossSums),
   });

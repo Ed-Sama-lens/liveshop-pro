@@ -243,7 +243,16 @@ export const saleSummaryRepository = Object.freeze({
       fetchOrderItemRows(bpIds, bpVariantMap),
     ]);
 
-    const items: SummaryStockItem[] = bpRows
+    // Build internal items that carry `orderIds` so `aggregateTotals`
+    // can compute the global distinct order count (open question 3
+    // verdict 2026-05-23 Option A). The public response strips
+    // `orderIds` from `orders` since `Set<string>` does not survive
+    // JSON serialization cleanly and is an internal concern.
+    type InternalItem = SummaryStockItem & {
+      readonly _orderIds: ReadonlySet<string>;
+    };
+
+    const internalItems: InternalItem[] = bpRows
       .filter((bp): bp is typeof bp & { variant: NonNullable<typeof bp.variant> } =>
         bp.variant !== null
       )
@@ -255,7 +264,8 @@ export const saleSummaryRepository = Object.freeze({
           bp.variant.lowStockAt
         );
         const bookings = foldBookingsByStatus(bookingGroups, bp.id);
-        const orders = foldOrdersByBp(orderItemRows, bp.id);
+        const ordersWithIds = foldOrdersByBp(orderItemRows, bp.id);
+        const { orderIds, ...orders } = ordersWithIds;
         const unitPrice = formatMoney2(bp.priceOverride ?? bp.variant.price);
 
         return Object.freeze({
@@ -271,10 +281,26 @@ export const saleSummaryRepository = Object.freeze({
           stock,
           bookings,
           orders,
+          _orderIds: orderIds,
         });
       });
 
-    const totals = aggregateTotals(items);
+    // aggregateTotals reads `orderIds` (optional on the public
+    // SummaryItem type) to compute the distinct global count.
+    const totals = aggregateTotals(
+      internalItems.map((it) => ({
+        bookings: it.bookings,
+        orders: it.orders,
+        orderIds: it._orderIds,
+      }))
+    );
+
+    // Strip _orderIds from the public response.
+    const items: SummaryStockItem[] = internalItems.map((it) => {
+      const { _orderIds, ...publicItem } = it;
+      void _orderIds;
+      return publicItem;
+    });
 
     return Object.freeze({
       saleDate,
