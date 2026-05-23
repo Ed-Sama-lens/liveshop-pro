@@ -1,0 +1,27 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "PAGE_ID_PLACEHOLDER",
+      "time": 1747920000000,
+      "messaging": [
+        {
+          "sender": { "id": "FB_USER_ID_12345" },
+          "recipient": { "id": "PAGE_ID_PLACEHOLDER" },
+          "timestamp": 1747920000000,
+          "message": {
+            "mid": "m_FAKE_MESSAGE_ID_image_001",
+            "attachments": [
+              {
+                "type": "image",
+                "payload": {
+                  "url": "https://example.com/fake-image-attachment.jpg"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

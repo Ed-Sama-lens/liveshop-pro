@@ -1,0 +1,26 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "PAGE_ID_PLACEHOLDER",
+      "time": 1747920000000,
+      "changes": [
+        {
+          "field": "feed",
+          "value": {
+            "item": "comment",
+            "comment_id": "POST_ID_FAKE_001_comment_001",
+            "post_id": "POST_ID_FAKE_001",
+            "verb": "add",
+            "from": {
+              "id": "FB_USER_ID_67890",
+              "name": "Fixture User"
+            },
+            "message": "+2 CM10",
+            "created_time": 1747920000
+          }
+        }
+      ]
+    }
+  ]
+}
