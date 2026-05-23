@@ -268,6 +268,185 @@ export function aggregateTotals(
   });
 }
 
+// ─── Range mode helpers (Tier 3.9-G5) ─────────────────────────────────────
+
+/**
+ * Enumerate inclusive YYYY-MM-DD dates between `from` and `to`.
+ *
+ * Pure. Treats both endpoints as UTC midnight; returns calendar days.
+ * Caller is responsible for ensuring `to >= from` (schema enforces).
+ */
+export function enumerateDateRange(from: string, to: string): readonly string[] {
+  const fromDate = new Date(`${from}T00:00:00Z`);
+  const toDate = new Date(`${to}T00:00:00Z`);
+  if (toDate.getTime() < fromDate.getTime()) return [];
+  const days: string[] = [];
+  for (
+    let cursor = fromDate.getTime();
+    cursor <= toDate.getTime();
+    cursor += 86_400_000
+  ) {
+    const d = new Date(cursor);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    days.push(`${y}-${m}-${day}`);
+  }
+  return days;
+}
+
+/**
+ * Per-product-code rollup across a date range. Sums booking + order
+ * metrics by `displayCode`. Stock fields intentionally omitted because
+ * stock is point-in-time (current snapshot), not historical.
+ */
+export interface ByCodeItem {
+  readonly displayCode: string;
+  readonly productName: string;
+  readonly stockCode: string;
+  readonly saleCode: string | null;
+  readonly bookings: BookingsBlock;
+  readonly orders: OrdersBlock;
+  readonly orderIds: ReadonlySet<string>;
+  readonly appearedOn: readonly string[];
+}
+
+export interface PerDaySummaryItemInput {
+  readonly displayCode: string;
+  readonly productName: string;
+  readonly stockCode: string;
+  readonly saleCode: string | null;
+  readonly bookings: BookingsBlock;
+  readonly orders: OrdersBlock;
+  readonly orderIds?: ReadonlySet<string>;
+}
+
+/**
+ * Fold per-day items into per-displayCode totals across the range.
+ *
+ * Input: a flat list of (saleDate, item) pairs across all days in the
+ * range. Output: one entry per distinct displayCode with summed
+ * bookings + orders + distinct orderIds + the list of saleDates it
+ * appeared on.
+ */
+export function foldByCodeAcrossDays(
+  pairs: readonly { readonly saleDate: string; readonly item: PerDaySummaryItemInput }[]
+): readonly ByCodeItem[] {
+  const byCode = new Map<
+    string,
+    {
+      productName: string;
+      stockCode: string;
+      saleCode: string | null;
+      bookings: { p: number; c: number; x: number; e: number; ct: number };
+      orderTouches: number;
+      orderedQuantity: number;
+      grossSums: string[];
+      orderIds: Set<string>;
+      appearedOn: Set<string>;
+    }
+  >();
+
+  for (const { saleDate, item } of pairs) {
+    let entry = byCode.get(item.displayCode);
+    if (entry === undefined) {
+      entry = {
+        productName: item.productName,
+        stockCode: item.stockCode,
+        saleCode: item.saleCode,
+        bookings: { p: 0, c: 0, x: 0, e: 0, ct: 0 },
+        orderTouches: 0,
+        orderedQuantity: 0,
+        grossSums: [],
+        orderIds: new Set<string>(),
+        appearedOn: new Set<string>(),
+      };
+      byCode.set(item.displayCode, entry);
+    }
+    entry.bookings.p += item.bookings.pendingReview;
+    entry.bookings.c += item.bookings.confirmed;
+    entry.bookings.x += item.bookings.cancelled;
+    entry.bookings.e += item.bookings.expired;
+    entry.bookings.ct += item.bookings.convertedToOrder;
+    entry.orderTouches += item.orders.orderCount;
+    entry.orderedQuantity += item.orders.orderedQuantity;
+    entry.grossSums.push(item.orders.grossTotal);
+    if (item.orderIds !== undefined) {
+      for (const id of item.orderIds) entry.orderIds.add(id);
+    }
+    entry.appearedOn.add(saleDate);
+  }
+
+  const out: ByCodeItem[] = [];
+  for (const [displayCode, e] of byCode) {
+    const total =
+      e.bookings.p + e.bookings.c + e.bookings.x + e.bookings.e + e.bookings.ct;
+    out.push(
+      Object.freeze({
+        displayCode,
+        productName: e.productName,
+        stockCode: e.stockCode,
+        saleCode: e.saleCode,
+        bookings: Object.freeze({
+          pendingReview: e.bookings.p,
+          confirmed: e.bookings.c,
+          cancelled: e.bookings.x,
+          expired: e.bookings.e,
+          convertedToOrder: e.bookings.ct,
+          total,
+        }),
+        orders: Object.freeze({
+          orderCount: e.orderIds.size,
+          orderedQuantity: e.orderedQuantity,
+          grossTotal: sumMoney2(e.grossSums),
+        }),
+        orderIds: e.orderIds,
+        appearedOn: Object.freeze([...e.appearedOn].sort()),
+      })
+    );
+  }
+  // Stable sort by displayCode for deterministic response.
+  return Object.freeze(
+    out.sort((a, b) => a.displayCode.localeCompare(b.displayCode))
+  );
+}
+
+export interface RangeTotals extends SummaryItemTotals {
+  readonly dayCount: number;
+}
+
+/**
+ * Aggregate range-wide totals. Uses the `byCode` rollup to compute
+ * global distinct order count (Union of orderIds across all codes) +
+ * sum of touches + booking totals + grand gross.
+ */
+export function aggregateRangeTotals(
+  byCode: readonly ByCodeItem[],
+  dayCount: number
+): RangeTotals {
+  let totalBookings = 0;
+  let totalOrderTouches = 0;
+  let totalOrderedQuantity = 0;
+  const grossSums: string[] = [];
+  const distinctOrderIds = new Set<string>();
+  for (const c of byCode) {
+    totalBookings += c.bookings.total;
+    totalOrderTouches += c.orders.orderCount;
+    totalOrderedQuantity += c.orders.orderedQuantity;
+    grossSums.push(c.orders.grossTotal);
+    for (const id of c.orderIds) distinctOrderIds.add(id);
+  }
+  return Object.freeze({
+    broadcastProductCount: byCode.length,
+    totalBookings,
+    totalOrders: distinctOrderIds.size,
+    totalOrderTouches,
+    totalOrderedQuantity,
+    totalGross: sumMoney2(grossSums),
+    dayCount,
+  });
+}
+
 /**
  * Pure helper: derive stock flags from variant qty + reserved qty +
  * optional lowStockAt threshold.
