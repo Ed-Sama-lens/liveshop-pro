@@ -1,0 +1,10 @@
+{
+  "id": "LIVE_VIDEO_FAKE_001_comment_001",
+  "message": "+3 BD3",
+  "created_time": "2026-05-23T10:00:00+0000",
+  "from": {
+    "id": "FB_USER_ID_99999",
+    "name": "Live Fixture User"
+  },
+  "live_video_id": "LIVE_VIDEO_FAKE_001"
+}
