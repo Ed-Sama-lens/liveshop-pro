@@ -116,31 +116,37 @@ async function resolveBatchSaleDate(
  * ConflictError specific to the sale flow. After Tier 3.9-B-Fix-1
  * reuse-Product logic, the most common path that fires here is the
  * partial unique index on (shopId, saleDate, displayCode).
+ *
+ * Copy is Thai-first (matches /sale admin dialog UI) with English
+ * suffix in parens so logs + Boss + Thai admins all stay readable.
+ * Mirrors inventory-side translation shipped in PR #131 (per UX
+ * audit candidate #4, 2026-05-24-inventory-bulk-ux-audit-after-d2.md).
+ *
+ * Recognized targets from schema + raw-SQL partial unique indexes:
+ *   - Product.@@unique([shopId, stockCode]) → 'shopId,stockCode' (should NOT fire post-reuse-Product)
+ *   - ProductVariant.@@unique([productId, sku]) → 'productId,sku' (should NOT fire post-reuse-Variant)
+ *   - BroadcastProduct.@@unique([liveSessionId, displayCode]) → 'liveSessionId,displayCode'
+ *   - Raw partial: BroadcastProduct_shop_saleDate_displayCode_key (no Prisma meta.target — fallback)
  */
-function classifySaleP2002(err: Prisma.PrismaClientKnownRequestError): ConflictError {
+export function classifySaleP2002(err: Prisma.PrismaClientKnownRequestError): ConflictError {
   const target = Array.isArray(err.meta?.target)
     ? err.meta?.target.join(', ')
     : String(err.meta?.target ?? '');
-  // Recognized targets from schema + raw-SQL partial unique indexes:
-  //   - Product.@@unique([shopId, stockCode]) → 'shopId,stockCode' (should NOT fire post-reuse-Product)
-  //   - ProductVariant.@@unique([productId, sku]) → 'productId,sku' (should NOT fire post-reuse-Variant)
-  //   - BroadcastProduct.@@unique([liveSessionId, displayCode]) → 'liveSessionId,displayCode'
-  //   - Raw partial: BroadcastProduct_shop_saleDate_displayCode_key (no Prisma meta.target — fallback)
-  let friendly = `Duplicate code: ${target || 'unknown'}. Transaction rolled back; no products created.`;
+  let friendly = `รหัสซ้ำ (Duplicate code): ${target || 'unknown'}. ระบบยกเลิกธุรกรรม ไม่มีสินค้าใหม่ถูกสร้าง.`;
   if (target.includes('stockCode')) {
     friendly =
-      'Stock code already exists in this shop with different metadata. Reuse logic failed unexpectedly.';
+      'รหัสสต็อกซ้ำในร้านนี้แต่ข้อมูลไม่ตรงกัน (Stock code already exists in this shop with different metadata). ระบบ reuse ล้มเหลว ติดต่อทีมพัฒนา.';
   } else if (target.includes('sku')) {
     friendly =
-      'Variant SKU collision. The existing product has a conflicting variant. Edit the product before retrying.';
+      'SKU ของ variant ซ้ำ (Variant SKU collision). สินค้าเดิมมี variant ที่ขัดแย้ง แก้ไขสินค้าก่อนแล้วลองใหม่.';
   } else if (target.includes('liveSessionId') && target.includes('displayCode')) {
     friendly =
-      'This product code already exists in the same live session. Pick a different code or cancel the existing entry.';
+      'รหัสสินค้านี้มีอยู่แล้วในรอบไลฟ์เดียวกัน (Product code already exists in the same live session). เลือกรหัสอื่นหรือยกเลิกรายการเดิม.';
   } else {
     // Partial unique index on (shopId, saleDate, displayCode) WHERE
     // saleDate IS NOT NULL fires here. Prisma surfaces no meta.target.
     friendly =
-      'Product code already exists for the selected sale date in this shop. Pick a different code or a different sale date.';
+      'รหัสสินค้านี้มีอยู่แล้วสำหรับวันขายที่เลือกในร้านนี้ (Product code already exists for the selected sale date in this shop). เลือกรหัสอื่นหรือวันขายอื่น.';
   }
   return new ConflictError(friendly);
 }
