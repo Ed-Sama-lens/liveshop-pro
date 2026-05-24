@@ -80,16 +80,22 @@ export interface SaleProductGridProps {
         readonly filteredInvalidCount?: number;
       };
   /**
-   * Optional callback fired when a new BroadcastProduct is created via
-   * the Add from Stock dialog. Parent uses this to refetch the product
-   * grid. Tier 3 PR 4.
+   * Optional callback fired when the BroadcastProduct list may have
+   * changed: create (Quick Create + AddFromStock), edit
+   * (EditProductCode), or delete. Parent uses this to bump
+   * `refetchToken` so all dependent panels refetch in parallel.
+   *
+   * Tier 3 PR 4. Renamed from `onProductCreated` per
+   * `2026-05-24-edit-product-code-refresh-audit.md` (F4 audit) —
+   * the original name suggested create-only, but the callback
+   * already covers all CRUD paths.
    */
-  readonly onProductCreated?: () => void;
+  readonly onProductsChanged?: () => void;
 }
 
 export function SaleProductGridPlaceholder({
   state,
-  onProductCreated,
+  onProductsChanged,
 }: SaleProductGridProps) {
   /**
    * Tier 3.6 — track which BP row is open in the EditProductCodeDialog.
@@ -206,13 +212,13 @@ export function SaleProductGridPlaceholder({
           <CreateQuickProductCodeDialog
             categories={quickCategories}
             saleDate={state.kind === 'ready' ? state.saleDate : null}
-            onCreated={() => onProductCreated?.()}
+            onCreated={() => onProductsChanged?.()}
           />
           <AddFromStockDialog
             liveSessionId={state.liveSessionId}
             saleDate={state.kind === 'ready' ? state.saleDate : null}
             alreadyAddedByVariantId={alreadyAddedByVariantId}
-            onCreated={onProductCreated}
+            onCreated={onProductsChanged}
           />
         </div>
       </SalePanelCard>
@@ -282,11 +288,11 @@ export function SaleProductGridPlaceholder({
           }}
           onUpdated={() => {
             setEditTarget(null);
-            onProductCreated?.();
+            onProductsChanged?.();
           }}
           onDeleted={() => {
             setEditTarget(null);
-            onProductCreated?.();
+            onProductsChanged?.();
           }}
         />
       )}
@@ -310,13 +316,13 @@ export function SaleProductGridPlaceholder({
         <CreateQuickProductCodeDialog
           categories={quickCategories}
           saleDate={state.kind === 'ready' ? state.saleDate : null}
-          onCreated={() => onProductCreated?.()}
+          onCreated={() => onProductsChanged?.()}
         />
         <AddFromStockDialog
           liveSessionId={state.liveSessionId}
           saleDate={state.kind === 'ready' ? state.saleDate : null}
           alreadyAddedByVariantId={alreadyAddedByVariantId}
-          onCreated={onProductCreated}
+          onCreated={onProductsChanged}
         />
       </div>
     </SalePanelCard>
