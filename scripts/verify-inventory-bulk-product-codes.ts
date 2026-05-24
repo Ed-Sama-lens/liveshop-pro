@@ -50,6 +50,84 @@ import { evaluateNonProdDatabase } from './lib/non-prod-db-guard';
 import { inventoryBulkRepository } from '../src/server/repositories/inventory-bulk.repository';
 import { ConflictError, ValidationError } from '../src/lib/errors';
 
+const HELP_TEXT = `\
+verify-inventory-bulk-product-codes.ts — Tier 3.9-D2-C non-prod verifier
+
+Exercises inventoryBulkRepository.createBulk() against a LOCAL Docker
+postgres. NEVER runs against production. Six-layer production-safety
+guard refuses any URL that looks production-like.
+
+Usage:
+  npm run verify:inventory:bulk
+  npx tsx scripts/verify-inventory-bulk-product-codes.ts [--help|--preflight]
+
+Required env:
+  CONFIRM_NON_PROD_DB=true        explicit ack you understand non-prod scope
+  DATABASE_URL=postgresql://...   localhost or 127.0.0.1 only, DB=liveshop_pro
+  VERIFY_T39_D2_RUN_ID=<id>       optional; defaults to current timestamp
+
+Flags:
+  --help        print this message and exit 0
+  --preflight   run only the production-safety guard + URL sanity print, no
+                DB writes; exit 0 if guard PASS, exit 2 if guard FAIL
+
+Exit codes:
+  0   all 10 cases PASS + cleanup OK   (or --preflight passed)
+  1   any case failed
+  2   production-safety guard blocked execution
+
+Local non-prod setup (Linux/macOS/WSL recommended):
+  docker compose up -d postgres
+  DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \\
+    npx prisma migrate deploy
+  CONFIRM_NON_PROD_DB=true \\
+    VERIFY_T39_D2_RUN_ID=$(date +%Y%m%d-%H%M%S) \\
+    DATABASE_URL='postgresql://liveshop:liveshop_dev_2024@localhost:5432/liveshop_pro' \\
+    npm run verify:inventory:bulk
+
+Windows Docker known issue:
+  Some Windows hosts cannot authenticate from host → Docker postgres TCP
+  even with correct credentials, while container-internal psql + container
+  → container TCP work. Likely Docker Desktop NAT or libpq SSL negotiation.
+  Workaround: run from WSL2, Linux, or macOS host. See
+  docs/superpowers/2026-05-24-inventory-verifier-troubleshooting.md
+  for diagnostics.
+
+Cases covered:
+  A — single create + zero BroadcastProduct
+  B — bulk 1..5 + zero BroadcastProduct
+  C — quantity 0 preserved
+  D — price 0 preserved
+  E — no category
+  F — reuse-or-create Product (Tier 3.9-B-Fix-1)
+  G — bad displayCode shape rollback
+  H — invalid range reject (endNo < startNo)
+  I — max batch reject (range > 100)
+  J — cleanup fixtures
+`;
+
+function printGuardDiagnostics(): void {
+  const url = process.env.DATABASE_URL;
+  const confirm = process.env.CONFIRM_NON_PROD_DB;
+  console.log('[PREFLIGHT] Inventory bulk verifier production-safety guard');
+  console.log('  CONFIRM_NON_PROD_DB     =', confirm === 'true' ? 'true (OK)' : `${confirm ?? '(unset)'} (must equal "true")`);
+  if (!url) {
+    console.log('  DATABASE_URL            = (unset)');
+  } else {
+    try {
+      const parsed = new URL(url);
+      // NEVER print password
+      const sanitized = `${parsed.protocol}//${parsed.username}:***@${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`;
+      console.log('  DATABASE_URL            =', sanitized);
+      console.log('  parsed.hostname         =', parsed.hostname);
+      console.log('  parsed.port             =', parsed.port || '5432 (default)');
+      console.log('  parsed.pathname (DB)    =', parsed.pathname);
+    } catch {
+      console.log('  DATABASE_URL            = (invalid URL)');
+    }
+  }
+}
+
 function assertNonProdDatabase(): {
   url: string;
   runId: string;
@@ -60,7 +138,14 @@ function assertNonProdDatabase(): {
     confirmNonProdDb: process.env.CONFIRM_NON_PROD_DB,
   });
   if (!result.ok) {
+    console.error('');
     console.error('[GUARD] Refusing to run:', result.reason);
+    console.error('');
+    console.error('Production-safety guard blocked execution. Diagnostics:');
+    printGuardDiagnostics();
+    console.error('');
+    console.error('Run with --help for full setup instructions.');
+    console.error('Run with --preflight to test the guard without DB writes.');
     process.exit(2);
   }
   const runId = process.env.VERIFY_T39_D2_RUN_ID || `${Date.now()}`;
@@ -85,6 +170,28 @@ function assert(cond: boolean, msg: string): asserts cond {
 }
 
 async function main(): Promise<void> {
+  // Flags
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
+  if (argv.includes('--preflight')) {
+    printGuardDiagnostics();
+    const result = evaluateNonProdDatabase({
+      databaseUrl: process.env.DATABASE_URL,
+      confirmNonProdDb: process.env.CONFIRM_NON_PROD_DB,
+    });
+    if (!result.ok) {
+      console.error('');
+      console.error('[GUARD] Preflight FAIL:', result.reason);
+      process.exit(2);
+    }
+    console.log('');
+    console.log('[GUARD] Preflight OK — verifier may run. Re-execute without --preflight to perform DB writes.');
+    process.exit(0);
+  }
+
   const { url, runId, sanitizedHost } = assertNonProdDatabase();
 
   console.log(`Running Tier 3.9-D2 inventory bulk verifier against ${sanitizedHost}`);
