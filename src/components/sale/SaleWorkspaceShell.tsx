@@ -391,7 +391,7 @@ export function SaleWorkspaceShell() {
         <ErrorBoundarySection>
           <SaleProductGridPlaceholder
             state={productState}
-            onProductCreated={() => setRefetchToken((n) => n + 1)}
+            onProductsChanged={() => setRefetchToken((n) => n + 1)}
           />
         </ErrorBoundarySection>
         <ErrorBoundarySection>
