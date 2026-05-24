@@ -1,0 +1,20 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "PAGE_123",
+      "time": 1716528000,
+      "changes": [
+        {
+          "field": "reactions",
+          "value": {
+            "item": "like",
+            "reaction_type": "LIKE",
+            "from": { "id": "USER_222", "name": "Liker" },
+            "post_id": "POST_789"
+          }
+        }
+      ]
+    }
+  ]
+}

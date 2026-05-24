@@ -1,0 +1,19 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "PAGE_123",
+      "time": 1716528000,
+      "messaging": [
+        {
+          "recipient": { "id": "PAGE_123" },
+          "timestamp": 1716528000123,
+          "message": {
+            "mid": "m_no_sender_999",
+            "text": "ghost message"
+          }
+        }
+      ]
+    }
+  ]
+}

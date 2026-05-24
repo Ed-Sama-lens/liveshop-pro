@@ -1,0 +1,22 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "PAGE_123",
+      "time": 1716528000,
+      "changes": [
+        {
+          "field": "feed",
+          "value": {
+            "item": "comment",
+            "comment_id": "COMMENT_456",
+            "post_id": "POST_789",
+            "from": { "id": "USER_111", "name": "Test Customer" },
+            "created_time": 1716527000,
+            "verb": "remove"
+          }
+        }
+      ]
+    }
+  ]
+}
