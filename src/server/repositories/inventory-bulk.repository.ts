@@ -63,18 +63,24 @@ export interface InventoryBulkResult {
  * paths are:
  *   - Product.@@unique([shopId, stockCode]) — should NOT fire post-reuse
  *   - ProductVariant.@@unique([productId, sku]) — variant collision
+ *
+ * Copy is Thai-first (matches the rest of the inventory dialog UI) with
+ * an English suffix in parentheses so logs + Boss + Thai admins all
+ * stay readable. Per UX audit candidate #4 (2026-05-24-inventory-bulk-
+ * ux-audit-after-d2.md) — only the inventory-side strings translate
+ * here; sale repository is untouched per Boss Track A scope.
  */
-function classifyInventoryP2002(err: Prisma.PrismaClientKnownRequestError): ConflictError {
+export function classifyInventoryP2002(err: Prisma.PrismaClientKnownRequestError): ConflictError {
   const target = Array.isArray(err.meta?.target)
     ? err.meta?.target.join(', ')
     : String(err.meta?.target ?? '');
-  let friendly = `Duplicate code: ${target || 'unknown'}. Transaction rolled back; no products created.`;
+  let friendly = `รหัสซ้ำ (Duplicate code): ${target || 'unknown'}. ระบบยกเลิกธุรกรรม ไม่มีสินค้าใหม่ถูกสร้าง.`;
   if (target.includes('stockCode')) {
     friendly =
-      'Stock code already exists in this shop with different metadata. Reuse logic failed unexpectedly.';
+      'รหัสสต็อกซ้ำในร้านนี้แต่ข้อมูลไม่ตรงกัน (Stock code already exists in this shop with different metadata). ระบบ reuse ล้มเหลว ติดต่อทีมพัฒนา.';
   } else if (target.includes('sku')) {
     friendly =
-      'Variant SKU collision. The existing product has a conflicting variant. Edit the product before retrying.';
+      'SKU ของ variant ซ้ำ (Variant SKU collision). สินค้าเดิมมี variant ที่ขัดแย้ง แก้ไขสินค้าก่อนแล้วลองใหม่.';
   }
   return new ConflictError(friendly);
 }
