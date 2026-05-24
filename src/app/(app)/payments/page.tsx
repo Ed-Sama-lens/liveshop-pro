@@ -36,6 +36,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { SlipImage } from '@/components/payments/SlipImage';
 
 interface PaymentEntry {
   readonly id: string;
@@ -262,18 +263,14 @@ export default function PaymentsPage() {
                   key={p.id}
                   className="flex items-center gap-4 rounded-lg border p-4 hover:bg-muted/50 transition-colors"
                 >
-                  {/* Slip Thumbnail */}
-                  <div className="h-16 w-16 shrink-0 rounded-lg border bg-muted flex items-center justify-center overflow-hidden">
-                    {p.slipUrl ? (
-                      <img
-                        src={p.slipUrl}
-                        alt="Slip"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                    )}
-                  </div>
+                  {/* Slip Thumbnail — signed URL via /api/payments/[id]/slip-url */}
+                  <SlipImage
+                    paymentId={p.id}
+                    hasSlip={Boolean(p.slipUrl)}
+                    alt="Slip"
+                    className="h-16 w-16 shrink-0 rounded-lg border object-cover overflow-hidden"
+                    variant="thumbnail"
+                  />
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
@@ -375,13 +372,15 @@ export default function PaymentsPage() {
                 )}
               </div>
 
-              {/* Slip Image */}
+              {/* Slip Image — signed URL via /api/payments/[id]/slip-url */}
               {selectedPayment.slipUrl ? (
                 <div className="rounded-lg border overflow-hidden bg-muted">
-                  <img
-                    src={selectedPayment.slipUrl}
+                  <SlipImage
+                    paymentId={selectedPayment.id}
+                    hasSlip={true}
                     alt="Payment slip"
                     className="w-full max-h-96 object-contain"
+                    variant="detail"
                   />
                 </div>
               ) : (
