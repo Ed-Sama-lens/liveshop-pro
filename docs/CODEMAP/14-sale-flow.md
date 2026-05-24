@@ -1,11 +1,12 @@
 # 14 — Sale Flow (saleDate / Product Code / Booking / Order)
 
-**Last refresh:** 2026-05-23 (Block 3 Track A)
-**Master baseline:** `0c7b6e0`
+**Last refresh:** 2026-05-24 (autonomous docs block Track 5 — post Tier 3.9-D2 + state machine invariants + PR queue cleanup)
+**Master baseline:** `987e1f0`
 
 Maps the date-anchored sale workflow shipped through Tier 3.8 / 3.9 /
-3.9-G. Read this BEFORE answering "how does X relate to Y" for any
-booking / order / product code / summary question.
+3.9-G / 3.9-D2. Read this BEFORE answering "how does X relate to Y"
+for any booking / order / product code / summary / inventory-bulk
+question.
 
 ---
 
@@ -66,7 +67,9 @@ disclosure surfaces them on demand.
 | `broadcastProductRepository` | `list` (filterable by saleDate) / `create` / `createMany` (batch route #53) / `update` / `delete` | `src/server/repositories/broadcast-product.repository.ts` |
 | `bookingRepository` | `createManual` / `confirm` / `cancel` / `convertToOrder` | `src/server/repositories/booking.repository.ts` |
 | `orderRepository` | (creation via `convertToOrder` in booking repo) | `src/server/repositories/order.repository.ts` |
-| `quickProductCodesRepository` | `createBulk` (Product+Variant+BP atomic) | `src/server/repositories/quick-product-codes.repository.ts` |
+| `quickProductCodesRepository` (sale) | `createBulk` (Product+Variant+BP atomic) — delegates to shared `product-bulk-core` | `src/server/repositories/quick-product-codes.repository.ts` |
+| `inventoryBulkRepository` (NEW Tier 3.9-D2-A, #104) | `createBulk` (Product+Variant atomic, NO BroadcastProduct) — delegates to shared `product-bulk-core`, classifies P2002 | `src/server/repositories/inventory-bulk.repository.ts` |
+| `product-bulk-core` (NEW Tier 3.9-D2-R, #101) | `buildCodePairs` / `resolveName` / `assertDisplayCodeShape` / `assertCategoryBelongsToShop` (pre-tx) / `createOrReuseProductVariantPairs` (tx) — pure + transactional shared core | `src/server/repositories/product-bulk-core.ts` |
 | `saleSummaryRepository` | `summarizeByDate` / `summarizeByRange` | `src/server/repositories/sale-summary.repository.ts` |
 | `stockReservationRepository` | reservation lifecycle | `src/server/repositories/stock.repository.ts` |
 
@@ -91,6 +94,7 @@ disclosure surfaces them on demand.
 | `/api/sale/orders/from-bookings` | POST | convert bookings → Order | write |
 | `/api/sale/customers/search` | GET | PII-safe customer typeahead | read |
 | `/api/sale/summary` | GET | single-day OR range summary aggregate | read |
+| `/api/inventory/quick-product-bulk` (NEW Tier 3.9-D2-A, #104) | POST | bulk Product+Variant create, NO BroadcastProduct, all-or-nothing, cap 100 | OWNER/MANAGER (CHAT_SUPPORT/WAREHOUSE → 403) |
 
 Cross-shop isolation: every route sources `shopId` from session, never
 from client.
@@ -121,6 +125,15 @@ from client.
 | `board/SaleBoardReadOnly` (NEW PR #88) | accordion drawer skeleton | **NOT wired** |
 | `SalePanelCard` | shared panel chrome | used everywhere |
 
+### Inventory side (NEW Tier 3.9-D + D2-B)
+
+| Component | Role | Wired? |
+|---|---|---|
+| `QuickInventoryProductDialog` (PR #60 + #105) | quick-create dialog with bulk-range toggle (default OFF) | wired |
+| `QuickProductFormFields` (shared) | shared form fields used by sale + inventory quick dialogs | wired |
+| `ProductForm` (Advanced) | multi-variant + image upload, fallback on `/inventory/new` | wired (untouched by D2) |
+| `BulkEditBar` / `ProductFilters` / `ProductTable` / `Pagination` / `LowStockAlert` / `StockBadge` / `VariantForm` / `VariantAttributeTag` | inventory list/edit UI | wired |
+
 ---
 
 ## 7. Pure helpers (`src/lib/sale/`)
@@ -133,6 +146,7 @@ from client.
 | `summary.helpers.ts` | `foldBookingsByStatus` / `foldReservedQty` / `foldOrdersByBp` / `sumMoney2` / `aggregateTotals` / `enumerateDateRange` / `foldByCodeAcrossDays` / `aggregateRangeTotals` / `deriveStockFlags` |
 | `board-helpers.ts` | `pillColorState` / `compareDisplayCode` / `sortDisplayCodes` / `formatBoardHeader` / `buildSlots` / `slotsRemaining` |
 | `board-display.ts` | `pillWidthChars` / `slotProgressPercent` / `slotRowDisplayState` / `formatPillLabel` / `formatStockBadge` / color tokens |
+| `state-machine-invariants.test.ts` (NEW PR #103) | locks PENDING/CONFIRMED/CONVERTED/V Rich filter partition invariants — 53 tests | (test file, not runtime helper) |
 
 UI components consume helpers via type-safe imports. Helpers never
 touch React, fetch, or Prisma.
@@ -156,6 +170,22 @@ all panels refetch in parallel
 5 surfaces refetch in parallel: summary / product grid / booking
 queue / customer panel / inbox.
 
+**Detailed refetch model:** see `docs/superpowers/2026-05-24-sale-workspace-state-map.md` (state owners table + refetch graph + mutation→refetch matrix + 8 stale-state risks + anti-patterns).
+
+**EditProductCode refresh path (F4 audit closed as not-a-bug):**
+
+```
+EditProductCodeDialog.handleSave → onUpdated callback
+  ↓
+SaleProductGridPlaceholder.onProductCreated prop (misleading name — fires on create + AddFromStock + edit + delete)
+  ↓
+SaleWorkspaceShell.setRefetchToken(n+1)
+  ↓
+BP list + bookings + summary all refetch
+```
+
+Optional R2 future rename: `onProductCreated` → `onProductsChanged` (audit at `2026-05-24-edit-product-code-refresh-audit.md`).
+
 ---
 
 ## 9. Cross-references
@@ -167,14 +197,51 @@ queue / customer panel / inbox.
 - Tier 3.10-A V Rich audit: `2026-05-23-tier-3-10-a-vrich-board-design-audit.md`
 - Summary+board integration: `2026-05-23-sale-summary-board-integration-plan.md`
 - Phase 1.5 design: `2026-05-22-sale-auto-confirm-auto-order-design.md` (PR #54) + refinement (PR #81) + matrix (PR #90)
+- Tier 3.9-D2 inventory bulk (PR #99 plan + #101 D2-R refactor + #104 D2-A endpoint + #105 D2-B UI + #106 D2-C verifier+workbook): `2026-05-23-inventory-bulk-d2-final-handoff.md` + `2026-05-23-inventory-bulk-technical-plan.md` + `2026-05-23-inventory-api-reference.md`
+- State machine lock (PR #103): `2026-05-23-stock-booking-state-machine-matrix.md` + `tests/unit/lib/sale/state-machine-invariants.test.ts`
+- Sale workspace state map: `2026-05-24-sale-workspace-state-map.md`
+- Sale data-fetch audit: `2026-05-24-sale-data-fetch-audit.md`
+- EditProductCode refresh audit (F4 closed): `2026-05-24-edit-product-code-refresh-audit.md`
+- Phase 1.5 verdict packet + implementation checklist + decision summary: `2026-05-23-phase-1-5-verdict-packet.md` + `2026-05-24-phase-1-5-implementation-checklist.md` + `2026-05-24-phase-1-5-decision-summary.md`
+- V Rich board readiness + wiring checklist: `2026-05-24-v-rich-board-readiness.md` + `2026-05-24-v-rich-board-wiring-readiness-checklist.md`
+- Inventory bulk UX audit: `2026-05-24-inventory-bulk-ux-audit-after-d2.md`
+- Non-prod verifier suite plan: `2026-05-24-non-prod-verifier-suite-plan.md` + `2026-05-24-sale-core-verifier-plan.md` + `2026-05-24-inventory-verifier-troubleshooting.md`
+- Smoke workbook v5 (canonical, supersedes v1-v4): `2026-05-24-admin-smoke-workbook-v5.md`
 
 ---
 
 ## 10. Cross-cutting hard rules
 
-- ❌ Never auto-create BroadcastProduct rows from inventory bulk
-- ❌ Never set `saleDate` on inventory Product/Variant create (inventory is not date-bound)
+- ❌ Never auto-create BroadcastProduct rows from inventory bulk (verified by D2-A unit tests + verifier Cases A+B)
+- ❌ Never set `saleDate` on inventory Product/Variant create (inventory is not date-bound; Zod strips `saleDate` from `inventoryBulkBodySchema`)
 - ❌ Never expose customer phone/email/address in `/api/sale/*` responses
-- ❌ Never cross-shop leak (every route + repo carries `shopId`)
-- ❌ Never mutate `Order` rows outside `bookingRepository.convertToOrder` path (Phase 1.5 adds `upsertFromBooking`)
+- ❌ Never cross-shop leak (every route + repo carries `shopId`; cross-shop category injection blocked pre-`$transaction` in `assertCategoryBelongsToShop`)
+- ❌ Never mutate `Order` rows outside `bookingRepository.convertToOrder` path (Phase 1.5 adds `upsertFromBooking` once Q4 verdicted)
 - ❌ Never write to `StockReservation.releasedAt` outside booking cancel + order convert flows
+- ❌ Never break atomicity: bulk Product+Variant create + reuse-or-create + Boss-required quantity=0 / price=0 valid (PR #101 + #104 enforced via `$transaction`)
+- ❌ Never break PENDING / CONFIRMED / CONVERTED / V Rich filter partition (locked by 53 invariants in `state-machine-invariants.test.ts`, PR #103)
+
+---
+
+## 11. Tier 3.9 / D2 / state-machine summary (post-refresh)
+
+| Sub-tier | Status | Source |
+|---|---|---|
+| 3.9-A baseline (saleDate context) | ✅ shipped | Block 1-2 |
+| 3.9-B saleDate migration safety + Fix-1 reuse | ✅ shipped | Block 2 |
+| 3.9-C compact summary panel | ✅ shipped (PR #85) | Block 2 |
+| 3.9-D quick inventory create default | ✅ shipped (PR #60) | earlier |
+| 3.9-D2-R shared core refactor | ✅ shipped (PR #101) `759a48b` | Block 7 |
+| 3.9-D2-A inventory bulk endpoint | ✅ shipped (PR #104) `55b24a8` | Block 7 |
+| 3.9-D2-B inventory bulk UI toggle | ✅ shipped (PR #105) `94876be` | Block 7 |
+| 3.9-D2-C verifier + workbook v4 + API ref | ✅ shipped (PR #106) `e6b41b1` | Block 7 |
+| State machine invariants locked | ✅ shipped (PR #103) `8222a2f` — 53 tests | Block 7 |
+| Smoke workbook v5 canonical | ✅ shipped (PR #122) `30cae36` — supersedes v1-v4 | Block 8 |
+| Sale workspace state map | ✅ shipped (PR #121) `3afd0c4` | Block 8 |
+| EditProductCode F4 audit (not-a-bug) | ✅ shipped (PR #120) `0a3a892` | Block 8 |
+| 3.9-G7-A `/sale/summary` route | held — Boss verdict pending on PR #86 §10 | — |
+| 3.9-G7-B+ range UI | held | — |
+| Phase 1.5-B auto-confirm runtime | HARD GATE — held per Decision 2 | — |
+| Phase 1.5-C auto-order-append runtime | HARD GATE — held per Decision 2 | — |
+| Phase 1.5-D multi-code runtime | HARD GATE — held per Decision 2 | — |
+| V Rich board wiring | HARD GATE — components shipped (PR #88), wiring held per Boss | — |
