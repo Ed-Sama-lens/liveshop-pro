@@ -52,3 +52,49 @@ export function allowNonLiveBooking(): boolean {
 export function allowBookingIdsOnlyConversion(): boolean {
   return readBool('ALLOW_BOOKINGIDS_ONLY_CONVERSION');
 }
+
+/**
+ * V Rich Stage 3.10-C WIRE-1 — accepts an extended truthy set
+ * (`'true'` OR `'1'`). Used by NEXT_PUBLIC_* flags where Boss may
+ * flip via Vercel Dashboard. Existing `readBool` strict-mode is
+ * unchanged for legacy server-only flags.
+ *
+ * Treats as TRUE: `'true'`, `'1'` (case-sensitive).
+ * Treats as FALSE: unset, empty string, `'false'`, `'0'`, any other
+ * value. Never throws.
+ */
+function readBoolExtended(name: string): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return false;
+  return raw === 'true' || raw === '1';
+}
+
+/**
+ * V Rich Stage 3.10-C WIRE-1 — sale layout v2 (V Rich board)
+ * feature flag.
+ *
+ * When ENABLED (env `NEXT_PUBLIC_SALE_LAYOUT_V2` is `'true'` or
+ * `'1'`):
+ *   - `/sale` workspace MAY render the V Rich board ALONGSIDE the
+ *     existing Product Codes panel (WIRE-3 will consume this).
+ *
+ * When DISABLED (env unset, empty, `'false'`, `'0'`, or unknown):
+ *   - Zero UI change. Existing Product Codes panel is the only view.
+ *
+ * Defaults to FALSE when unset → production behavior unchanged after
+ * WIRE-1 ships. Boss flips to `'true'` in Vercel only after WIRE-2 +
+ * WIRE-3 land + Boss is ready to preview the board.
+ *
+ * The `NEXT_PUBLIC_` prefix means this value is exposed to the
+ * browser bundle at build time. Do NOT use it to gate authorization
+ * or secret data — it gates UI render only.
+ *
+ * Read at call-time (not module-init) so `vi.stubEnv` works in tests.
+ *
+ * Per design audit:
+ * - docs/superpowers/2026-05-25-v-rich-stage-3-10-c-readiness-audit.md
+ * - docs/superpowers/2026-05-25-v-rich-3-10-c-boss-decision-packet.md
+ */
+export function isSaleLayoutV2Enabled(): boolean {
+  return readBoolExtended('NEXT_PUBLIC_SALE_LAYOUT_V2');
+}
