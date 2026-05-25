@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Upload, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import Image from 'next/image';
 import type { PaymentRow } from '@/server/repositories/payment.repository';
+import { SlipImage } from '@/components/payments/SlipImage';
 
 interface PaymentSectionProps {
   readonly orderId: string;
@@ -232,16 +232,16 @@ export function PaymentSection({ orderId, totalAmount }: PaymentSectionProps) {
           )}
         </div>
 
-        {/* Slip Image */}
+        {/* Slip Image — signed URL via /api/payments/[id]/slip-url */}
         {payment.slipUrl && (
           <div>
             <p className="mb-1 text-sm text-muted-foreground">{t('uploadSlip')}</p>
-            <Image
-              src={payment.slipUrl}
+            <SlipImage
+              paymentId={payment.id}
+              hasSlip={true}
               alt="Payment slip"
-              width={200}
-              height={300}
-              className="rounded border object-contain"
+              className="rounded border object-contain h-[300px] w-[200px]"
+              variant="thumbnail"
             />
           </div>
         )}
