@@ -1,81 +1,85 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Grid3x3 } from 'lucide-react';
 import { SalePanelCard } from '../SalePanelCard';
-import {
-  buildSlots,
-  formatBoardHeader,
-  type SlotInput,
-} from '@/lib/sale/board-helpers';
+import type {
+  BoardViewModel,
+  BoardPillViewModel,
+  BoardSlotDrawerViewModel,
+} from '@/lib/sale/build-board-view-model';
 import { ProductCodePillList, type PillListItem } from './ProductCodePillList';
 import { SlotRow } from './SlotRow';
 
 /**
- * V Rich-style board (read-only) — Tier 3.10-C skeleton.
+ * V Rich-style board (read-only) — Tier 3.10-C WIRE-2.
  *
  * Combines:
- *   - Pill row (PR #72 + #79 helpers + this PR's ProductCodePillList)
+ *   - Pill row (PR #72 + #79 helpers + ProductCodePillList)
  *   - Click pill → expand drawer below pill row
- *   - Drawer renders slot list via `buildSlots()` (PR #72)
+ *   - Drawer renders slot list from `BoardViewModel` produced by
+ *     `buildBoardViewModel` (Stage 3.10-B mapper, PR #149)
  *
  * No drag/drop. No outbound. No mutation. Single-open accordion per
  * Tier 3.10-A locked decision.
  *
- * NOT wired into production `/sale` workspace. Lives behind a future
- * `NEXT_PUBLIC_SALE_LAYOUT_V2` flag (per PR #63 §3 design audit). This
- * PR is foundation only — tests + visual verification before the flip.
+ * WIRE-2 contract change: component now consumes the mapper's
+ * `BoardViewModel` directly instead of re-deriving from a legacy
+ * `SaleBoardProduct[]` shape. Caller (future WIRE-3 shell wiring)
+ * is responsible for calling `buildBoardViewModel(input)` and passing
+ * the frozen result here. Mapper output is sorted + sliced +
+ * formatted; this component is pure render.
+ *
+ * NOT wired into production `/sale` workspace. Lives behind the
+ * `NEXT_PUBLIC_SALE_LAYOUT_V2` flag (PR #152). This PR is contract
+ * refactor only — no UI is rendered in production until WIRE-3
+ * wires the shell.
+ *
+ * @see {@link buildBoardViewModel} for mapper input/output
+ * @see {@link isSaleLayoutV2Enabled} for the flag gate (WIRE-1)
  */
 
 export interface SaleBoardReadOnlyProps {
-  readonly products: readonly SaleBoardProduct[];
-  /** Selected display code; null = no drawer expanded. */
-  readonly defaultSelected?: string | null;
+  /** Mapper output from `buildBoardViewModel`. Sorted, formatted, frozen. */
+  readonly viewModel: BoardViewModel;
+  /** Selected displayCode override; null/undefined uses mapper's `selectedBroadcastProductId`. */
+  readonly defaultSelectedDisplayCode?: string | null;
   /** Optional onCancel handler for slot X button. Defaults to no-op. */
   readonly onSlotCancel?: (bookingId: string) => void;
 }
 
-export interface SaleBoardProduct {
-  readonly broadcastProductId: string;
-  readonly displayCode: string;
-  readonly productName: string;
-  readonly unitPriceRm: string; // already 'RM10.00' format
-  readonly totalQuantity: number;
-  readonly availableQty: number;
-  readonly lowStockAt: number | null;
-  readonly bookings: readonly SlotInput[];
-}
-
 export function SaleBoardReadOnly({
-  products,
-  defaultSelected = null,
+  viewModel,
+  defaultSelectedDisplayCode = null,
   onSlotCancel,
 }: SaleBoardReadOnlyProps) {
-  const [selected, setSelected] = useState<string | null>(defaultSelected);
+  const [selected, setSelected] = useState<string | null>(defaultSelectedDisplayCode);
 
-  const pillItems: readonly PillListItem[] = useMemo(
-    () =>
-      products.map((p) => ({
-        displayCode: p.displayCode,
-        availableQty: p.availableQty,
-        totalQuantity: p.totalQuantity,
-        lowStockAt: p.lowStockAt,
-      })),
-    [products]
-  );
+  // Pill list expects compact PillListItem shape; map from view model.
+  const pillItems: readonly PillListItem[] = viewModel.pills.map((p) => ({
+    displayCode: p.displayCode,
+    availableQty: p.availableSlots,
+    totalQuantity: p.totalSlots,
+    lowStockAt: null,
+  }));
 
-  const selectedProduct = useMemo(
-    () => products.find((p) => p.displayCode === selected) ?? null,
-    [products, selected]
-  );
+  // Resolve selected pill from displayCode.
+  const selectedPill: BoardPillViewModel | null =
+    selected !== null
+      ? viewModel.pills.find((p) => p.displayCode === selected) ?? null
+      : null;
+  const selectedDrawer: BoardSlotDrawerViewModel | null =
+    selectedPill !== null
+      ? viewModel.drawers[selectedPill.broadcastProductId] ?? null
+      : null;
 
   return (
     <SalePanelCard
       title="Sale Board (V Rich style) — preview"
       subtitle={
-        selectedProduct === null
+        selectedPill === null
           ? 'คลิกรหัสเพื่อดู slot'
-          : `Selected: ${selectedProduct.displayCode}`
+          : `Selected: ${selectedPill.displayCode}`
       }
       icon={Grid3x3}
       variant="placeholder"
@@ -88,9 +92,10 @@ export function SaleBoardReadOnly({
         }
       />
 
-      {selectedProduct !== null ? (
+      {selectedPill !== null && selectedDrawer !== null ? (
         <BoardDrawer
-          product={selectedProduct}
+          pill={selectedPill}
+          drawer={selectedDrawer}
           onSlotCancel={onSlotCancel}
         />
       ) : null}
@@ -99,34 +104,25 @@ export function SaleBoardReadOnly({
 }
 
 function BoardDrawer({
-  product,
+  pill,
+  drawer,
   onSlotCancel,
 }: {
-  readonly product: SaleBoardProduct;
+  readonly pill: BoardPillViewModel;
+  readonly drawer: BoardSlotDrawerViewModel;
   readonly onSlotCancel?: (bookingId: string) => void;
 }) {
-  const { slots, overflow } = useMemo(
-    () => buildSlots(product.bookings, product.totalQuantity),
-    [product.bookings, product.totalQuantity]
-  );
-
-  const header = formatBoardHeader({
-    displayCode: product.displayCode,
-    productName: product.productName,
-    unitPriceRm: product.unitPriceRm,
-    availableQty: product.availableQty,
-    totalQuantity: product.totalQuantity,
-  });
-
   return (
     <div className="mt-3 space-y-2 rounded-md border border-border bg-card/40 p-2">
-      <div className="text-[11px] font-medium text-foreground">{header}</div>
+      <div className="text-[11px] font-medium text-foreground">
+        {pill.headerLabel}
+      </div>
 
-      {slots.length === 0 ? (
+      {drawer.slots.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">ไม่มี slot</p>
       ) : (
         <div className="space-y-1">
-          {slots.map((s) => (
+          {drawer.slots.map((s) => (
             <SlotRow
               key={s.index}
               index={s.index + 1}
@@ -143,12 +139,12 @@ function BoardDrawer({
         </div>
       )}
 
-      {overflow.length > 0 ? (
+      {drawer.hasOverflow ? (
         <p
           className="rounded border border-destructive/40 bg-destructive/5 px-2 py-1 text-[10px] text-destructive"
           role="alert"
         >
-          ⚠ {overflow.length} booking(s) เกินจำนวน slot ที่มี — admin ควรเช็คสต็อก
+          ⚠ {drawer.overflow.length} booking(s) เกินจำนวน slot ที่มี — admin ควรเช็คสต็อก
         </p>
       ) : null}
     </div>
