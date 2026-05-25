@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
+import { assertR2Config } from './r2-config';
 
 // ─── R2 Client ────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,11 @@ export async function saveFile(
   input: File | { buffer: Buffer; mimeType: string },
   subfolder: string
 ): Promise<UploadResult> {
+  // Lazy R2 config check — surfaces a clear error at first use
+  // instead of a confusing SDK error deep inside putObject. Does NOT
+  // run at module init (per Boss Decision 4 — no startup failure).
+  assertR2Config();
+
   const mimeType = input instanceof File ? input.type : input.mimeType;
   const body = input instanceof File
     ? Buffer.from(await input.arrayBuffer())
@@ -91,6 +97,9 @@ export async function saveFile(
  */
 export async function deleteFile(url: string): Promise<void> {
   if (!url) return;
+
+  // Lazy R2 config check at first use — see saveFile rationale.
+  assertR2Config();
 
   const key = extractKeyFromPublicUrl(url);
 
@@ -152,6 +161,9 @@ export interface SignedReadUrlResult {
 export async function getSignedReadUrl(
   input: SignedReadUrlInput
 ): Promise<SignedReadUrlResult> {
+  // Lazy R2 config check at first use — see saveFile rationale.
+  assertR2Config();
+
   const key = extractKeyFromPublicUrl(input.publicUrlOrKey);
   if (!key || key.length === 0) {
     throw new Error('getSignedReadUrl: empty key after extraction');

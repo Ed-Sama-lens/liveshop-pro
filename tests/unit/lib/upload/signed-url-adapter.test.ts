@@ -102,9 +102,12 @@ describe('getSignedReadUrl — expiry + key handling', () => {
 
   beforeEach(() => {
     // Ensure SDK has minimal env to construct the client without throw.
+    // Also satisfies the lazy r2-config assert at entry points.
     process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || 'test-account';
     process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || 'test-key';
     process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || 'test-secret';
+    process.env.R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'test-bucket';
+    process.env.R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://images.test.local';
   });
 
   it('uses default expiry when not specified', async () => {
@@ -178,6 +181,8 @@ describe('getSignedReadUrl — no raw secret leakage in result', () => {
     process.env.R2_ACCOUNT_ID = 'test-account';
     process.env.R2_ACCESS_KEY_ID = 'AKIA-VERY-SPECIFIC-TEST-KEY';
     process.env.R2_SECRET_ACCESS_KEY = 'super-secret-not-in-result-please';
+    process.env.R2_BUCKET_NAME = 'test-bucket';
+    process.env.R2_PUBLIC_URL = 'https://images.test.local';
   });
 
   it('result.key does NOT contain secret access key', async () => {
@@ -218,5 +223,36 @@ describe('expiry constants — sanity', () => {
 
   it('DEFAULT >= 5 minutes (gives admin time to view + download)', () => {
     expect(SIGNED_URL_DEFAULT_EXPIRY_SECONDS).toBeGreaterThanOrEqual(300);
+  });
+});
+
+describe('getSignedReadUrl — lazy R2 config assert on entry', () => {
+  // Save + restore env around these tests so we don't leak missing-env
+  // state into other test files. The lazy assert in getSignedReadUrl
+  // (added Phase 1C wiring) surfaces a clear error when R2 config is
+  // missing, instead of failing deep inside the SDK.
+
+  it('throws clear error when R2_ACCOUNT_ID is missing', async () => {
+    const saved = process.env.R2_ACCOUNT_ID;
+    delete process.env.R2_ACCOUNT_ID;
+    try {
+      await expect(getSignedReadUrl({ publicUrlOrKey: 'shop/slips/abc.jpg' })).rejects.toThrow(
+        /R2 config validation failed.*R2_ACCOUNT_ID/
+      );
+    } finally {
+      if (saved !== undefined) process.env.R2_ACCOUNT_ID = saved;
+    }
+  });
+
+  it('throws clear error when R2_PUBLIC_URL is missing', async () => {
+    const saved = process.env.R2_PUBLIC_URL;
+    delete process.env.R2_PUBLIC_URL;
+    try {
+      await expect(getSignedReadUrl({ publicUrlOrKey: 'shop/slips/abc.jpg' })).rejects.toThrow(
+        /R2 config validation failed.*R2_PUBLIC_URL/
+      );
+    } finally {
+      if (saved !== undefined) process.env.R2_PUBLIC_URL = saved;
+    }
   });
 });
