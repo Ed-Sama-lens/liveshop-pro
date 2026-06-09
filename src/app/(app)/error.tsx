@@ -11,7 +11,6 @@ interface ErrorProps {
 
 export default function AppError({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // eslint-disable-next-line no-console
     console.error('App error:', error);
   }, [error]);
 
