@@ -93,7 +93,48 @@ export async function saveFile(
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 /**
+ * S3 error codes that mean "the object simply isn't there" — safe to
+ * ignore silently because the delete is idempotent. Anything outside
+ * this set is logged for ops visibility (auth issue, network failure,
+ * bucket policy change, etc).
+ *
+ * Per R2 audit gap G5 (2026-05-24-r2-storage-paths-audit.md).
+ */
+const DELETE_BENIGN_ERROR_CODES = new Set(['NoSuchKey', 'NotFound', '404']);
+
+interface SdkError {
+  readonly name?: string;
+  readonly Code?: string;
+  readonly $metadata?: { readonly httpStatusCode?: number };
+}
+
+/**
+ * Type-narrow an unknown to the SDK error shape used for code lookup.
+ */
+function asSdkError(err: unknown): SdkError {
+  if (err === null || typeof err !== 'object') return {};
+  return err as SdkError;
+}
+
+/**
+ * Decide whether a delete error should be ignored silently (object
+ * already gone) or surfaced via log (everything else).
+ */
+function isDeleteBenignError(err: unknown): boolean {
+  const sdkErr = asSdkError(err);
+  const code = sdkErr.name ?? sdkErr.Code ?? '';
+  if (DELETE_BENIGN_ERROR_CODES.has(code)) return true;
+  if (sdkErr.$metadata?.httpStatusCode === 404) return true;
+  return false;
+}
+
+/**
  * Delete a file from Cloudflare R2 by its URL or key.
+ *
+ * Idempotent. Non-404 errors are logged for ops visibility but never
+ * throw — caller does not need to react to delete failures (the upload
+ * lifecycle treats orphan blobs as eventually-reaped by lifecycle
+ * policy, NOT as a fatal error).
  */
 export async function deleteFile(url: string): Promise<void> {
   if (!url) return;
@@ -110,8 +151,20 @@ export async function deleteFile(url: string): Promise<void> {
         Key: key,
       })
     );
-  } catch {
-    // File may already be deleted, ignore
+  } catch (err) {
+    if (isDeleteBenignError(err)) {
+      // Object already gone — idempotent path; silent.
+      return;
+    }
+    // Non-404: log for ops visibility. Never re-throw — delete is
+    // best-effort by contract; failure here should not cascade.
+    const sdkErr = asSdkError(err);
+    const errName = sdkErr.name ?? sdkErr.Code ?? 'UnknownError';
+    const status = sdkErr.$metadata?.httpStatusCode ?? 'unknown';
+    // eslint-disable-next-line no-console
+    console.error(
+      `[storage.deleteFile] Non-benign R2 delete error key=${key} code=${errName} status=${status}`
+    );
   }
 }
 
