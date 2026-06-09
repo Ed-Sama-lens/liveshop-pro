@@ -7,6 +7,15 @@ vi.mock('@/lib/db/prisma', () => ({
   },
 }));
 
+vi.mock('next-auth', () => ({
+  default: vi.fn(() => ({
+    handlers: { GET: vi.fn(), POST: vi.fn() },
+    auth: vi.fn(),
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  })),
+}));
+
 vi.mock('@auth/prisma-adapter', () => ({
   PrismaAdapter: vi.fn(() => ({})),
 }));
@@ -79,15 +88,6 @@ describe('session callback immutability', () => {
 
 describe('Auth module exports', () => {
   it('auth module exports handlers, auth, signIn, signOut', async () => {
-    vi.mock('next-auth', () => ({
-      default: vi.fn(() => ({
-        handlers: { GET: vi.fn(), POST: vi.fn() },
-        auth: vi.fn(),
-        signIn: vi.fn(),
-        signOut: vi.fn(),
-      })),
-    }));
-
     // The module shape should have these exports
     const authModule = await import('@/lib/auth/auth');
     expect(authModule).toHaveProperty('handlers');

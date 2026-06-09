@@ -11,27 +11,22 @@ export const clientLogger = {
   error(message: string, context?: LogContext, error?: Error | unknown): void {
     const formatted = formatMessage(message, context);
     if (error instanceof Error) {
-      // eslint-disable-next-line no-console
       console.error(formatted, error);
     } else {
-      // eslint-disable-next-line no-console
       console.error(formatted, error ?? '');
     }
   },
 
   warn(message: string, context?: LogContext): void {
-    // eslint-disable-next-line no-console
     console.warn(formatMessage(message, context));
   },
 
   info(message: string, context?: LogContext): void {
-    // eslint-disable-next-line no-console
     console.info(formatMessage(message, context));
   },
 
   debug(message: string, context?: LogContext): void {
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
       console.debug(formatMessage(message, context));
     }
   },

@@ -12,7 +12,6 @@ interface ErrorProps {
 
 export default function ShopError({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // eslint-disable-next-line no-console
     console.error('Shop error:', error);
   }, [error]);
 
