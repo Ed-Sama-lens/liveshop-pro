@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
 import { assertR2Config } from './r2-config';
+import { assertSniffedMimeMatches } from './mime-sniff';
 
 // ─── R2 Client ────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,12 @@ export async function saveFile(
   if (body.length > MAX_FILE_SIZE) {
     throw new Error(`File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB`);
   }
+
+  // Defense in depth: verify the actual file content matches the
+  // declared mime type. Defends against mime-type spoofing where a
+  // malicious payload (PHP / HTML / zip) is sent with
+  // `Content-Type: image/jpeg`. Per R2 audit gap G6.
+  assertSniffedMimeMatches(body, mimeType);
 
   const ext = getExtension(mimeType);
   const hash = crypto.randomBytes(16).toString('hex');
