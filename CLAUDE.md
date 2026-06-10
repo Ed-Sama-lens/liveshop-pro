@@ -6,6 +6,29 @@
 
 ---
 
+## 🗺️ ROADMAP CONTRACT — read FIRST, every session (MANDATORY)
+
+**Before ANY roadmap/feature/UX/inbox/mobile work in this repo:**
+
+1. Read **`docs/ROADMAP.md`** — THE single source of truth: 17 phases (0–16), current statuses, hard no-go list, Boss action queue, verification commands. Its §0 tells you exactly how to operate. Do NOT plan from memory or chat history — the file is the contract.
+2. Detail specs it points to (read when working that area):
+   - `docs/superpowers/2026-06-10-unified-inbox-feature-spec.md` — inbox F1–F20 + AI/Claude HITL integration (Phase 10)
+   - `docs/superpowers/2026-06-10-ux-design-plan.md` — UX standards §2 (EVERY UI PR must pass), page disposition, wireframes
+   - `docs/superpowers/2026-06-10-mobile-app-plan.md` — PWA M1–M3 (Phase 16)
+
+**Operating contract (Boss directive 2026-06-10 — supersedes older review flow):**
+
+- **Codex + ChatGPT review RETIRED** (token exhausted). Claude = sole reviewer.
+- **Mandatory self-review:** after every major deliverable → `scrutinize` skill (intent → simpler-alternative → full code-path trace) → fix findings → only then merge.
+- **Merge authority:** Claude merges own PRs when ALL: R2 scope + CI 5/5 green + scrutinize pass + not on ROADMAP §2 hard no-go list. R1 needs the phase's Boss verdict; R0 needs per-action Boss token.
+- **Reports/questions/teaching Boss = ภาษาไทย เข้าใจง่าย.** Code/commits/paths/errors stay English.
+- **Never claim done without fresh verification output** (tsc exit, vitest counts, build exit — commands in ROADMAP §8).
+- Update ROADMAP §4 statuses when phases change state. ROADMAP is living — keep it true.
+
+**State right now (refresh from `git log`/`gh pr list` — do not trust this line blindly):** PR #154 (V Rich WIRE-3) open, blocked on Boss UI smoke; everything else merged through #165.
+
+---
+
 ## Identity
 
 | Field | Value |
