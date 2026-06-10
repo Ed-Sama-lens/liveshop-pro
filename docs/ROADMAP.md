@@ -8,7 +8,7 @@
 
 ## §0 How to use this file (Opus 4.8 — read this first)
 
-1. **Session boot:** read this file top-to-bottom once per session before any roadmap work. Then read `docs/superpowers/2026-05-25-goal-deep-audit-handoff.md` if you need finding-level detail.
+1. **Session boot:** read this file top-to-bottom once per session before any roadmap work. Then read `docs/superpowers/2026-05-25-goal-deep-audit-handoff.md` if you need finding-level detail. **UX work of any kind:** read `docs/superpowers/2026-06-10-ux-design-plan.md` (canonical UX standards §2, page disposition §3, per-surface specs §4, per-phase UX checklists §5) — every UI PR must pass its §2 checklist.
 2. **Find the active phase:** §4 Phase Index — first phase with status `▶ ACTIVE` or `READY`. Never skip a `BLOCKED-BOSS` gate.
 3. **Work the phase:** follow its task list in §5. Tasks are ordered. Each task says WHO does it (`[Claude]` or `[Boss]`).
 4. **Update this file** when a phase status changes (PR merged, Boss verdict received). Status edits to this file = docs-only, commit direct or via PR.
@@ -259,7 +259,9 @@ npm run dev
 2. Empty/fallback states (component + test per state): no saleDate selected · no product codes · stock unknown · zero available · no active bookings · mapper error (ErrorBoundary already wraps — pin it).
 3. UX copy pass (Thai primary) for board header/subtitle/drawer labels.
 4. Responsive pass: assert layout classes for sm/md/lg breakpoints in tests where possible.
-5. Scrutinize → PR → merge (R2: display-only changes).
+5. **Board scale + readability UX (ux-design-plan §4.1):** search/filter pills (debounced) · collapse groups · virtualize >50 pills · slot StatusChip semantics (ว่าง/จอง/ยืนยัน/over-alloc) · legend bar · loading skeleton · low-stock badge "เหลือ N" on pill (candidate C5 — include if data already in viewmodel).
+6. Board placement verdict: if Boss Phase-1 smoke says vertical stack scrolls too long → switch to tab toggle legacy/board (display-only change).
+7. Scrutinize → PR → merge (R2: display-only changes).
 
 #### [Boss] Task — visual review รอบสอง (~10 นาที)
 
@@ -305,7 +307,7 @@ Each question: recommendation + alternatives + risk. End with verdict template f
 
 #### [Claude] Tasks 5.3+ — strictly ordered after approval
 
-repository/API audit → route design (api-and-interface-design) → non-prod tests FIRST (TDD) → UI skeleton behind flag → [Boss] manual smoke (Claude สอนไทยตอนถึง) → merge.
+repository/API audit → route design (api-and-interface-design) → non-prod tests FIRST (TDD) → UI skeleton behind flag (interaction design per ux-design-plan §4.1 Phase-5 flow: slot popover/bottom-sheet · recent-customers-first picker · undo-before-commit toast per Q-spec · cancel = confirm dialog stating stock returned) → [Boss] manual smoke (Claude สอนไทยตอนถึง) → merge.
 
 **Forbidden before approval:** any booking mutation, reservation behavior change, order creation change, production POST.
 
@@ -326,6 +328,7 @@ repository/API audit → route design (api-and-interface-design) → non-prod te
 5. Search/AddFromStock edge audit: paging, hide-existing correctness, duplicate suppression — tests.
 6. Docs/codemap update for product creation model (`docs/CODEMAP/`).
 7. Confirm product code usable for both live + off-live saleDates (tests at repository level).
+8. UX (ux-design-plan §5 Phase-6): sticky bulk action bar · duplicate error inline Thai (not toast-only) · quick-create parity check every entry point.
 
 **Forbidden:** new schema migration · new image upload scope · production mutation.
 
@@ -345,6 +348,8 @@ repository/API audit → route design (api-and-interface-design) → non-prod te
 4. Range UI plan doc (NOT build): how admin picks date ranges, what loads.
 5. CSV/export plan doc (NOT runtime).
 6. Thai/English admin labels audit on summary panel.
+7. **Dashboard "หน้าเริ่มวัน" upgrade (ux-design-plan §4.4):** today-saleDate card (จอง/ยืนยัน/ค้างโอน RM/stock ใกล้หมด, click→/sale) + pending-work row (สลิปรอตรวจ N) — extract dashboard file while touching (audit LOW).
+8. **Disposition verdict `/analytics` + `/reports` (ux-design-plan §3):** decide merge vs split of summary/analytics/reports surfaces; kill placeholder text in /reports.
 
 **Not yet:** big analytics dashboard · historical stock snapshots (schema not ready) · CSV runtime.
 
@@ -384,6 +389,8 @@ repository/API audit → route design (api-and-interface-design) → non-prod te
 
 1. env/schema/docs/tests only (schema = R1 dissent first) → 2. webhook GET verification route (challenge echo) → 3. POST signature validation + raw-body handling → 4. Page Inbox receive → storage → 5. post comments receive → 6. live comments receive/poll → 7. message → customer/conversation/message mapping (cross-shop safe) → 8. parser suggestion-only (no auto-confirm) → 9. one-click booking from suggestion (admin-initiated).
 
+**UX (ux-design-plan §5 Phase-9):** `/live-selling` placeholder gets "เชื่อม Facebook ก่อน" banner → settings · FB connect settings page shows status only, never secrets.
+
 **Forbidden:** asking Boss to paste secrets in chat · setting env · enabling runtime before Boss authorize · outbound · auto-send.
 
 **DoD:** webhook verified receive-only · messages stored + mapped safely · suggestions visible, never auto-acted.
@@ -393,6 +400,8 @@ repository/API audit → route design (api-and-interface-design) → non-prod te
 ### Phase 10 — Oho-style unified inbox (R1)
 
 **Preconditions:** Phase 9 working. **Canonical detail spec:** `docs/superpowers/2026-06-10-unified-inbox-feature-spec.md` (research-backed feature shortlist F1–F20, AI/Claude integration design, sub-phase plans, design checklist, Boss questions Q1–Q5). **Discovery doc:** `2026-05-13-omnichannel-live-commerce-inbox-discovery.md`, codemap 13.
+
+**UI home routes (ux-design-plan §3/§4.2/§4.3):** inbox builds INSIDE existing `/chat` route (currently placeholder — rebuild, don't parallel-build) · customer 360 builds inside `/customers` · 3-pane desktop / 1-pane-per-level mobile layout per ux-design-plan §4.2 · nav badges + `/notifications` event wiring land with 10B · settings team management (closes audit M4) required by 10B assignment.
 
 **Sub-phases (detail in spec §5):**
 - **10A** Foundation — conversation list · identity model · message storage
@@ -437,6 +446,8 @@ Add dangerous-transition pin tests:
 
 R2 fixes merge autonomously. Behavior-change fixes = R1 → dissent + Boss approve.
 
+**Bound engineering debt (ux-design-plan §7):** fix audit M2 exhaustive-deps 3 sites (one at a time + refetch-loop test each) · decide G9 UploadAudit table here or Phase 13 (R1 schema) · dangerous-transition error messages readable Thai.
+
 **DoD:** lifecycle stable · cross-shop safe · no raw slip URL anywhere · transition tests green.
 
 ---
@@ -459,7 +470,14 @@ auth/RBAC · shop ownership on every route · cross-shop access tests · upload 
 
 **Preconditions:** 1–7, 12, 13 done (8–11 optional for soft launch — decide with Boss).
 
-**[Claude]:** label simplification (Thai primary, English secondary, Chinese product display for Malaysia) · loading/empty/error states sweep · mobile/tablet pass · onboarding guide · admin manual (Thai) · known-limitations page · backup/restore notes · support/debug checklist.
+**[Claude] (full checklist = ux-design-plan §5 Phase-14):**
+1. Global standards sweep — every page passes ux-design-plan §2 (loading/empty/error triple · toast standard · StatusChip everywhere · form standards)
+2. Mobile pass — all tables → card lists · tap targets ≥44px · sticky primary actions
+3. `<img>` → `next/image` 8 sites (audit M1) + enable G11 remotePatterns
+4. Stub-page rule — zero dead-end placeholders survive (ux-design-plan §3 dispositions all executed)
+5. Label simplification (Thai primary, English secondary, Chinese product display for Malaysia)
+6. Onboarding guide + admin manual (Thai) + known-limitations page + backup/restore notes + support/debug checklist
+7. Candidates for Boss decision: global search (C1) · keyboard shortcuts (C2) · PWA push (C3 — post-launch)
 
 **[Boss]:** final UX walkthrough จริงทั้ง flow (Claude เตรียม script ไทยให้เดินตาม) · ซ้อมขายจริง 1 รอบบนข้อมูลทดสอบ · ตัดสินใจ launch readiness.
 
@@ -510,7 +528,8 @@ auth/RBAC · shop ownership on every route · cross-shop access tests · upload 
 | 4 | Phase 1.5 verdict §G Q1–Q8 + `IMPLEMENT NOW` | 20 นาที | Phase 8 | `2026-05-24-phase-1-5-final-verdict-packet.md` |
 | 5 | Meta Dashboard + Vercel env | 30–60 นาที | Phase 9–11 ทั้งสาย inbox | §5 Phase 9 Task 9.1 |
 | 6 | R0 bucket policy confirm | 5 นาที (หลัง stability ≥1 สัปดาห์) | Phase 13 ปิดจบ | Claude เตรียม plan ให้กดยืนยัน |
-| 7 | Final UX walkthrough + launch call | 1–2 ชม. | Phase 14–15 | Claude เตรียม script ไทย |
+| 7 | Cloudflare R2 lifecycle policy (audit G2) | 10 นาที | R2 hygiene — orphan blob auto-reap | Cloudflare Dashboard → R2 → bucket → lifecycle rule (Claude สอนตอนถึง) |
+| 8 | Final UX walkthrough + launch call | 1–2 ชม. | Phase 14–15 | Claude เตรียม script ไทย |
 
 **กติกาตอบ:** ตอบสั้นๆ ได้เลย เช่น `WIRE-3 UI smoke PASS — merge approved` หรือ `B-PASS E-FAIL: กดยกเลิก booking แล้ว stock ไม่คืน`. Claude จัดการต่อเอง.
 

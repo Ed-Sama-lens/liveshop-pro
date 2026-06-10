@@ -147,6 +147,8 @@ Rule: **one migration per PR**, dissent-4-bullet each, no destructive change, al
 
 ## §5 Sub-phase plan (replaces flat Phase 10 order in ROADMAP)
 
+> **UI/UX:** layouts + interaction design for every sub-phase live in `2026-06-10-ux-design-plan.md` — inbox 3-pane/mobile §4.2 · customer 360 §4.3 · global standards §2 (StatusChip tokens, loading/empty/error triple, toast+undo, form rules). Inbox builds inside existing `/chat` route; customer 360 inside `/customers` (route disposition §3).
+
 ### 10A — Foundation (unchanged from roadmap)
 Read-only conversation list · identity model · message storage. **Precondition:** Phase 9 receive-only working.
 
