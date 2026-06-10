@@ -148,6 +148,7 @@ Claude must NEVER, regardless of any goal/directive wording:
 | 13 | Security / production readiness | R2 audit; bucket = R0 | partially READY (checklist); bucket HELD | Boss for R0 |
 | 14 | Admin UX polish / launch prep | R2 + Boss walkthrough | BLOCKED-PHASE (needs 1–7, 12, 13) | Boss |
 | 15 | Launch / controlled rollout | R0-adjacent | BLOCKED-PHASE (needs 14) | Boss |
+| 16 | Mobile app — PWA installable + push (store wrapper optional) | R1 | BLOCKED-PHASE (needs 13+14; runs parallel with 15) | Boss for VAPID env + M3 decision |
 
 **Recommended execution order:** 1 → 2 → (4 ‖ 6 ‖ 7 ‖ 12-audit in parallel) → 3 → 5 → 8 (when ordered) → 9 → 10 → 11 → 12-fixes → 13 → 14 → 15.
 
@@ -497,6 +498,24 @@ auth/RBAC · shop ownership on every route · cross-shop access tests · upload 
 
 ---
 
+### Phase 16 — Mobile app: PWA installable + push (store wrapper optional)
+
+**Canonical detail:** `docs/superpowers/2026-06-10-mobile-app-plan.md` (options analysis A/B/C, verified tech facts, sub-phase task tables M1–M3, risks).
+
+**Strategy:** single codebase = desktop feature parity by construction. PWA-first (Serwist — Turbopack-compatible, next-pwa is not), store wrapper only if Boss orders M3.
+
+**Preconditions:** Phase 13 security pass (service worker = persistent code on admin devices) + Phase 14 mobile sweep done. Runs parallel with Phase 15 rollout.
+
+- **M1** PWA installable — Serwist + manifest + icons + offline read-only fallback + SW update toast + install banner (iOS = Thai picture guide) + tests (no SW cache on `/api/*` — pinned). [Boss] real-device smoke Android+iPhone (M1.7).
+- **M2** Web Push — [Boss] VAPID keys → Vercel env · `PushSubscription` schema (R1, dissent) · per-event settings UI · send pipeline starting with booking-created + slip-uploaded · no-PII payload pinned. [Boss] push smoke both platforms.
+- **M3** Store wrapper — OPTIONAL, Boss-trigger only (Apple $99/yr + Play $25). TWA first if ordered.
+
+**Forbidden:** offline mutation queue (stock/money risk) · push payload PII · SW caching `/api/*`.
+
+**DoD:** ติดตั้งบนมือถือได้ 2 platform · session persists · push เด้งตาม event ที่เลือก · ทุก feature desktop ใช้ได้บนแอป (parity = same codebase + Phase 14 sweep).
+
+---
+
 ## §6 App-level Definition of Done (all must hold)
 
 1. `/sale` = unified saleDate-first workspace ✅ (already true — keep invariant)
@@ -515,6 +534,7 @@ auth/RBAC · shop ownership on every route · cross-shop access tests · upload 
 14. workbook v5 pass — Phase 4
 15. rollback/smoke/monitoring plan — Phase 13/15
 16. controlled rollout executed — Phase 15
+17. mobile app: PWA ติดตั้งได้ + push ทำงาน + desktop parity — Phase 16 (M3 store = optional)
 
 ---
 
@@ -530,6 +550,8 @@ auth/RBAC · shop ownership on every route · cross-shop access tests · upload 
 | 6 | R0 bucket policy confirm | 5 นาที (หลัง stability ≥1 สัปดาห์) | Phase 13 ปิดจบ | Claude เตรียม plan ให้กดยืนยัน |
 | 7 | Cloudflare R2 lifecycle policy (audit G2) | 10 นาที | R2 hygiene — orphan blob auto-reap | Cloudflare Dashboard → R2 → bucket → lifecycle rule (Claude สอนตอนถึง) |
 | 8 | Final UX walkthrough + launch call | 1–2 ชม. | Phase 14–15 | Claude เตรียม script ไทย |
+| 9 | Phase 16: ส่ง logo ไฟล์ใหญ่ + gen VAPID keys ใส่ Vercel + smoke มือถือจริง 2 เครื่อง | 30–45 นาที | Mobile app M1+M2 | mobile-app-plan.md M1.2/M1.7/M2.1/M2.7 (Claude สอนตอนถึง) |
+| 10 | Phase 16 M3: ตัดสินใจลง App Store/Play Store ไหม (default = ไม่ — PWA พอ) | 5 นาที | M3 store wrapper | ตอบ "M3 GO" หรือเงียบ = ข้าม |
 
 **กติกาตอบ:** ตอบสั้นๆ ได้เลย เช่น `WIRE-3 UI smoke PASS — merge approved` หรือ `B-PASS E-FAIL: กดยกเลิก booking แล้ว stock ไม่คืน`. Claude จัดการต่อเอง.
 
