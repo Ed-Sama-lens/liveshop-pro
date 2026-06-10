@@ -392,13 +392,21 @@ repository/API audit → route design (api-and-interface-design) → non-prod te
 
 ### Phase 10 — Oho-style unified inbox (R1)
 
-**Preconditions:** Phase 9 working. **Discovery doc exists:** `2026-05-13-omnichannel-live-commerce-inbox-discovery.md`, codemap 13.
+**Preconditions:** Phase 9 working. **Canonical detail spec:** `docs/superpowers/2026-06-10-unified-inbox-feature-spec.md` (research-backed feature shortlist F1–F20, AI/Claude integration design, sub-phase plans, design checklist, Boss questions Q1–Q5). **Discovery doc:** `2026-05-13-omnichannel-live-commerce-inbox-discovery.md`, codemap 13.
 
-**[Claude] order:** read-only conversation list → customer/channel identity model (schema = R1 gate) → message storage → notes/tags/status/assignment → message→booking link → one-click booking → quick replies draft-only → [Boss gate] outbound manual send → automation last.
+**Sub-phases (detail in spec §5):**
+- **10A** Foundation — conversation list · identity model · message storage
+- **10B** Organization — status pipeline · assignment+handover · tags · notes · quick replies (F1–F6)
+- **10C** Customer 360 — customer panel in chat · lifecycle stages · follow-up reminders · cross-channel merge (F7–F10)
+- **10D** AI assist — `AiSuggestion` HITL queue: summaries · reply drafts · auto-tag · booking suggestions · daily digest; Claude connects via scripts → `/api/ai/*` token-gated → optional MCP (spec §3) (F11–F16)
+- **10E** Follow-through — auto-assign rules · broadcast (Boss gate heavy, outbound LAST) (F17–F18)
+- **10F** Metrics — SLA + per-admin analytics (F19)
 
-**Boss approvals needed at:** every schema migration · channel runtime integration · outbound enable · production env · real-customer data handling decisions.
+**AI safety invariants (spec §3, test-pinned):** all AI output lands in reviewable suggestion queue · zero direct AI mutation of booking/order/stock · outbound send never automated · context pack has PII allowlist · everything shop-scoped + audit-logged.
 
-**DoD:** all channels in one list · conversation↔customer linked · booking from message works · outbound (if enabled) manual + approved only.
+**Boss approvals needed at:** every schema migration (one per PR + dissent) · channel runtime integration · C2 service token (Vercel, Boss-set) · outbound enable · merge semantics (spec Q-table) · real-customer data handling decisions.
+
+**DoD:** all channels in one list · conversation↔customer linked · booking from message works · admin จัดระเบียบด้วย status/assignment/tags/follow-up ได้ · Claude ช่วยสรุป/ร่าง/แนะนำผ่าน HITL queue ได้ · outbound (if enabled) manual + approved only.
 
 ---
 
