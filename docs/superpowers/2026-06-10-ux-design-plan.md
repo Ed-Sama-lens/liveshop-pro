@@ -166,7 +166,7 @@ Rule: introduce as shared `StatusChip` component variants — single owner, no a
 |---|---|---|---|
 | C1 | Global search (ลูกค้า/ออเดอร์/รหัสสินค้า จาก header ทุกหน้า) | 14 | admin หาของเร็วขึ้นมาก; โครง API search มีบางส่วนแล้ว |
 | C2 | Keyboard shortcuts (j/k เลื่อนแชท, r ตอบ, b จองให้) | 14 | power admin เร็วขึ้น; ทำหลัง flow นิ่ง |
-| C3 | PWA installable + push notification มือถือ | 15+ | แม่ค้าไม่ต้องเปิด browser; รอ launch เสถียรก่อน |
+| C3 | ~~PWA installable + push~~ → **GRADUATED เป็น ROADMAP Phase 16** (2026-06-10) | 16 | ดู `2026-06-10-mobile-app-plan.md` — committed plan แล้ว ไม่ใช่ candidate |
 | C4 | Slip auto-read AI (spec F20) | หลัง 12 | Page365 parity; ต้องการ payment hardening ก่อน |
 | C5 | Stock ใกล้หมดแจ้งใน live (board badge "เหลือ 2") | 3 | กัน oversell ระหว่างไลฟ์ — เสนอใส่ Phase 3 เลยถ้า data พร้อม |
 
