@@ -108,7 +108,7 @@ MAJOR triggers:
 3. **Reversibility** — R0/R1/R2? rollback cost?
 4. **Blind spots** — momentum ปิดตาอะไร?
 
-Skip dissent: single file < 50 lines, comment, typo, internal helper, test, doc, formatting.
+Skip dissent: single file < 50 lines, comment, typo, internal helper, test, doc, formatting. **Docs-only / tests-only PRs are exempt from the >3-files/>200-LOC trigger regardless of size** (roadmap-era: large spec/plan docs are routine — scrutinize self-review still applies).
 
 ## 4. SCOPE DRIFT GUARD
 
@@ -121,25 +121,28 @@ Skip dissent: single file < 50 lines, comment, typo, internal helper, test, doc,
 Protocol: STOP. Ask:
 > "Scope expanding from <X> to also <Y>. Proceed?"
 
+**Roadmap exemption:** work explicitly listed in `docs/ROADMAP.md` phase tasks (or its linked specs) = pre-approved scope — execute without re-asking, including multi-PR sequences within one phase's task list. Ask only when LEAVING the roadmap (new feature not in any phase/spec, or jumping a BLOCKED gate).
+
 ## 5. R0/R1/R2 REVERSIBILITY
 
 ### R0 — Irreversible. STOP, ASK FIRST.
 - `git push --force` to master
 - `prisma migrate reset` / `DROP TABLE` / `DELETE` without WHERE
-- Rotate / delete secrets (Vercel env, R2 keys, FB App secret)
-- R2 bucket delete / mass `DeleteObject`
+- **Any Vercel env change (add/edit/delete) — Boss-owned, Claude never touches** (aligned with ROADMAP §2 #3; supersedes old R1 entry)
+- Rotate / delete secrets (R2 keys, FB App secret)
+- R2 bucket delete / mass `DeleteObject` / bucket policy
 - Production order data deletion
 - Charge customer card / send mass email
 - Vercel deploy with failing tests
 - Change FB App `live` mode
 
-### R1 — Costly. DO + explain.
-- Prisma migration (auto-apply on Vercel)
+### R1 — Costly. Dissent first; merge needs the phase's Boss verdict (ROADMAP risk legend).
+- **Prisma migration (auto-applies on Vercel at merge) — per-PR Boss approval BEFORE merge** (aligned with ROADMAP §2 #4; PR can be built + CI'd autonomously, merge waits)
 - Public API route signature change
 - CSP header change (`next.config.ts`)
 - Currency / pricing logic
-- Add Vercel env var
 - Rename feature flag
+- Production-visible UI wiring (e.g. WIRE-3 class changes) — Boss smoke before merge
 
 ### R2 — Cheap. JUST DO.
 - Comment / docstring
@@ -148,6 +151,53 @@ Protocol: STOP. Ask:
 - Test
 - Codemap entry update
 - Lint / formatting / log line
+
+---
+
+## Boss-Crew orchestration (Opus 4.8 era — liveshop-pro tuning)
+
+Opus 4.8 = Boss (primary driver). Sonnet 4.6 + Haiku 4.5 = Crew via Agent/Workflow tools. Global policy `~/.claude/rules/agents.md` applies; project tuning below.
+
+### Project sub-agent roster (`.claude/agents/` — tracked in repo)
+
+| Agent | Model | Mode | Use for |
+|---|---|---|---|
+| `ls-scout` | Haiku | read-only | "where is X" · route/page inventory · grep sweeps · CI/lint status — fire liberally, ~15× cheaper |
+| `ls-implementer` | Sonnet | edit | well-specified ROADMAP tasks (named files + acceptance) — forbidden from money/stock/auth/schema/env; leaves verification output |
+| `ls-test-writer` | Sonnet | tests-only | invariant pins (no-PII / shop-scope / read-only / flag-false) · regression tests · flag matrices — reports prod bugs, never fixes them |
+| `ls-reviewer` | Sonnet | read-only | scrutinize-style PR review with liveshop invariant checklist — verdict SHIP / FIX-THEN-SHIP / REWORK |
+| `ls-ux-auditor` | Sonnet | read-only | ux-design-plan §2 compliance audit per surface — pre-catches issues before Boss visual smoke (never claims visual acceptance) |
+| `ls-security-auditor` | Sonnet | read-only | shop-boundary / PII / dangerous-transition / upload sweeps — Phase 12/13 + skeptic voice on R1 |
+
+**Division-of-labor defaults per phase:** Phase 2/3/6/7 build → `ls-implementer` + `ls-test-writer`, reviewed by `ls-reviewer`. Phase 12/13 → `ls-security-auditor` sweeps, Opus fixes. Phase 14 → `ls-ux-auditor` per page batch + Workflow sweep for mechanical fixes. R1 adversarial verify → `ls-reviewer` + `ls-security-auditor` in parallel as independent skeptics. Recon anywhere → `ls-scout` first, Boss-thread reads second.
+
+### Model routing per roadmap work type
+
+| Work | Model | Notes |
+|---|---|---|
+| Phase planning · R1 dissent · schema design · scrutinize review · merge decisions · Boss-facing Thai reports | **Opus (main thread)** | judgment work — don't delegate |
+| Well-specified implementation from a ROADMAP/spec task (component per ux-plan wireframe, route per api-design, test suite per pinned invariants) | **Sonnet subagent** | spec must name files + acceptance; Opus verifies output before merge |
+| Read-only recon: grep sweeps, "where is X", docs lookup, CI status, lint classification, page inventory | **Haiku subagent (Explore)** | ~15× cheaper; never give write tools |
+| Codebase-wide sweeps (Phase 14 §2-standards sweep, `<img>`→`next/image` ×8, terminology unification) | **Workflow tool** (Sonnet stages) | repeatable + resumable; worktree isolation for parallel edits |
+
+### Delegation rules (calibrated — not too tight, not loose)
+
+- **Stay in main thread:** iterative work on shared context, quick fixes, anything touching money/stock/auth logic (Opus implements those directly).
+- **Spawn Crew when:** output floods context (test logs, wide search), independent parallel tracks (Phase 6 ‖ 7 ‖ 12-audit while waiting on Boss gates), or sweep >5 files of mechanical change.
+- **Reviewer subagents = read-only tools always.** Implementer subagents get worktree isolation when parallel.
+- **Adversarial verify (2-3 skeptic subagents) ONLY for:** R1 money/stock/booking semantics (Phase 5/8), auth/security changes, schema migrations, AI-suggestion mutation paths (Phase 10D). Routine R2 = single-pass self-check + scrutinize — Opus 4.8 self-verification is reliable there; don't burn tokens stacking verifiers on docs/tests/UI-copy.
+- **Crew escalates to Boss-thread when:** blocked, unplanned decision, scope question, test fails twice. Crew never merges; Opus merges after verifying.
+
+### Testing calibration (overrides global 80%-everything when in conflict)
+
+- TDD red-green for **behavior changes** (booking/order/stock/payment/API contracts) — vertical slices, integration > unit, test through public API.
+- UI components: test rendered behavior + flag matrices + a11y roles; do NOT chase coverage % on display-only code.
+- Docs/config/scripts: no test mandate; verification = tsc + lint + targeted run.
+- Invariant pins (no-PII, shop-scope, no-SW-cache-on-api, read-only-board) = NON-NEGOTIABLE regardless of coverage numbers.
+
+### PR conventions (post-Codex era)
+
+`boss-style-pr` structure stays (Summary / Changes / Test plan / What this PR does NOT do) but reviewer = self-`scrutinize`, not ChatGPT/Codex. Acceptance matrix only for R1+. Small R2 PRs may use short body — don't pad ceremony onto a 20-line diff.
 
 ---
 

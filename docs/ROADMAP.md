@@ -124,7 +124,7 @@ Claude must NEVER, regardless of any goal/directive wording:
 - **Reporting:** milestone reports in Thai, plain language. Teaching Boss = step-by-step Thai with exact commands + expected screen results + what to reply.
 - **Per-PR hygiene:** focused tests + full suite when touching shared code + `npx tsc --noEmit` + `npm run lint` + `git diff --check`.
 - **One dependent command per Bash call** (no `&&`-chained git/PR mutations). CI poll = `gh pr checks` direct.
-- **Model routing note:** this file is written for Opus 4.8 as primary driver. Sub-agent fan-out per `~/.claude/rules/agents.md` (reviewers read-only, implementers Sonnet OK, verify high-risk with adversarial sub-agents).
+- **Model routing note:** Opus 4.8 = Boss (plan/dissent/scrutinize/merge), Sonnet 4.6 = implement from specs, Haiku 4.5 = read-only recon. Project-tuned delegation rules + testing calibration + adversarial-verify scope = `CLAUDE.md` § Boss-Crew orchestration (canonical). Global fallback `~/.claude/rules/agents.md`.
 
 ---
 
