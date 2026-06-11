@@ -195,6 +195,12 @@ Opus 4.8 = Boss (primary driver). Sonnet 4.6 + Haiku 4.5 = Crew via Agent/Workfl
 - Docs/config/scripts: no test mandate; verification = tsc + lint + targeted run.
 - Invariant pins (no-PII, shop-scope, no-SW-cache-on-api, read-only-board) = NON-NEGOTIABLE regardless of coverage numbers.
 
+### Context & session continuity (canonical: `docs/superpowers/2026-06-11-skills-context-system.md`)
+
+- Skill routing for this repo = that doc §1 (Tier A auto-fire / Tier B situational / Tier IGNORE — never read language packs, SEO suite, gsd/omc orchestration alternates here).
+- Context budget: ~60% used → finish task then run **`liveshop-handoff`** skill; ~75% → handoff NOW mid-task with exact stop point; delegate wide reads to `ls-scout`; reference specs by §, don't re-read.
+- Handoff skill syncs ROADMAP §4 → writes `docs/superpowers/handoffs/<date>.md` → refreshes project memory → Thai report. Fresh session resumes in ~3 file reads.
+
 ### PR conventions (post-Codex era)
 
 `boss-style-pr` structure stays (Summary / Changes / Test plan / What this PR does NOT do) but reviewer = self-`scrutinize`, not ChatGPT/Codex. Acceptance matrix only for R1+. Small R2 PRs may use short body — don't pad ceremony onto a 20-line diff.
