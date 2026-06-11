@@ -29,6 +29,40 @@
 
 `tdd` (Matt — behavior changes) · `grill-with-docs` (stress-test plan before R1) · `prototype` (UI variants) · `improve-codebase-architecture` (refactor audit) · `click-path-audit` (UI state bug) · `post-mortem` + `management-talk` (after validated fix) · `triage` / `to-issues` / `to-prd` (backlog shaping) · `deep-research` (external research) · `webapp-testing` / `playwright-cli` (browser probes) · `ai-slop-cleaner` (bulk-code cleanup) · `simplify` / `code-review` (built-ins, quick passes) · `performance-optimization` (perf phase) · `shipping-and-launch` (Phase 15) · `security-review` (Phase 13)
 
+**Gap-fix additions (coverage audit 2026-06-11):**
+- `postgres-patterns` — Phase 5/8: transactions, locking, race-condition handling on booking/stock mutations
+- `mcp-server-patterns` — Phase 10D stage C3: building the liveshop MCP server
+- `claude-api` — Phase 10D: server-side suggestion generators calling the Claude API (models/streaming/caching) — also fires per its own TRIGGER on any Claude-API work
+- `prompt-optimizer` — Phase 10D: tuning generator prompts from the feedback loop
+- `nextjs-turbopack` — Phase 16 M1: Serwist + Turbopack PWA build specifics
+- `canary-watch` — Phase 15: post-deploy monitoring during controlled rollout
+- `ai-regression-testing` — Phase 10D: regression strategy where the same model writes + reviews
+
+### §1.5 Phase-coverage matrix (proof of completeness — audited 2026-06-11)
+
+| Phase | Primary skills (Tier A implied everywhere) | Crew agents |
+|---|---|---|
+| 1 merge #154 | git-workflow · verification | — |
+| 2 WIRE-4 tests | tdd · webapp-testing · playwright-cli | ls-test-writer, ls-reviewer |
+| 3 V Rich stabilize | frontend-ui-engineering · ui-styling · prototype | ls-implementer, ls-ux-auditor |
+| 4 workbook triage | debug-mantra · systematic-debugging · click-path-audit | ls-scout |
+| 5 fill/cancel | grill-with-docs (spec) · api-and-interface-design · **postgres-patterns** · tdd | Opus implements (money zone) + ls-test-writer |
+| 6 product polish | coding-standards · simplify | ls-implementer, ls-scout |
+| 7 summary/dashboard | api-design · performance-optimization | ls-implementer |
+| 8 Phase 1.5 automation | database-migrations · dissent · **postgres-patterns** · security-and-hardening | Opus (money) + adversarial verify pair |
+| 9 FB receive-only | security-and-hardening · documentation-lookup/context7 · api-and-interface-design | ls-security-auditor |
+| 10A–C inbox | backend-patterns · frontend-ui-engineering · database-migrations | ls-implementer, ls-test-writer, ls-reviewer |
+| 10D AI assist | **claude-api** · **prompt-optimizer** · **ai-regression-testing** · **mcp-server-patterns** (C3) | Opus designs, ls-test-writer pins invariants |
+| 11 TG/WA | same as 9 + provider abstraction (api-and-interface-design) | ls-security-auditor |
+| 12 hardening | security-review · postgres-patterns · ai-regression-testing | ls-security-auditor sweeps |
+| 13 readiness | security-scan · security-review · deployment-patterns | ls-security-auditor |
+| 14 UX polish | frontend-ui-engineering · ui-styling · article-writing (admin manual) | ls-ux-auditor batches + Workflow sweep |
+| 15 launch | shipping-and-launch · **canary-watch** | — |
+| 16 PWA | **nextjs-turbopack** · performance-optimization · documentation-lookup | ls-implementer + ls-test-writer |
+| any session end | **liveshop-handoff** | — |
+
+No phase lacks a skill or agent. New-skill creation NOT needed — all gaps were routing omissions of skills already on disk.
+
 ### Tier IGNORE — exists on disk, never relevant here (do not invoke, do not read)
 
 - **Language packs (38):** cpp\*, golang\*, rust\*, kotlin\*, swift\*, django\*, laravel\*, perl\*, springboot\*, java\*, jpa\*, android\*, flutter\*, compose\*, pytorch\*, clickhouse-io, nuxt4-patterns, foundation-models-on-device
