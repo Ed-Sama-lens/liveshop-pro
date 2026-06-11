@@ -158,6 +158,19 @@ Protocol: STOP. Ask:
 
 Opus 4.8 = Boss (primary driver). Sonnet 4.6 + Haiku 4.5 = Crew via Agent/Workflow tools. Global policy `~/.claude/rules/agents.md` applies; project tuning below.
 
+### Project sub-agent roster (`.claude/agents/` — tracked in repo)
+
+| Agent | Model | Mode | Use for |
+|---|---|---|---|
+| `ls-scout` | Haiku | read-only | "where is X" · route/page inventory · grep sweeps · CI/lint status — fire liberally, ~15× cheaper |
+| `ls-implementer` | Sonnet | edit | well-specified ROADMAP tasks (named files + acceptance) — forbidden from money/stock/auth/schema/env; leaves verification output |
+| `ls-test-writer` | Sonnet | tests-only | invariant pins (no-PII / shop-scope / read-only / flag-false) · regression tests · flag matrices — reports prod bugs, never fixes them |
+| `ls-reviewer` | Sonnet | read-only | scrutinize-style PR review with liveshop invariant checklist — verdict SHIP / FIX-THEN-SHIP / REWORK |
+| `ls-ux-auditor` | Sonnet | read-only | ux-design-plan §2 compliance audit per surface — pre-catches issues before Boss visual smoke (never claims visual acceptance) |
+| `ls-security-auditor` | Sonnet | read-only | shop-boundary / PII / dangerous-transition / upload sweeps — Phase 12/13 + skeptic voice on R1 |
+
+**Division-of-labor defaults per phase:** Phase 2/3/6/7 build → `ls-implementer` + `ls-test-writer`, reviewed by `ls-reviewer`. Phase 12/13 → `ls-security-auditor` sweeps, Opus fixes. Phase 14 → `ls-ux-auditor` per page batch + Workflow sweep for mechanical fixes. R1 adversarial verify → `ls-reviewer` + `ls-security-auditor` in parallel as independent skeptics. Recon anywhere → `ls-scout` first, Boss-thread reads second.
+
 ### Model routing per roadmap work type
 
 | Work | Model | Notes |

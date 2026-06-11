@@ -48,8 +48,9 @@ next-env.d.ts
 # user-uploaded content
 /public/uploads/
 
-# claude
-.claude/
+# claude (local state ignored; project sub-agents ARE tracked)
+.claude/*
+!.claude/agents/
 
 .vercel
 
