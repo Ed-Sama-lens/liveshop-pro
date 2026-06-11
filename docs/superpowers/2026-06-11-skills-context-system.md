@@ -63,6 +63,19 @@
 
 No phase lacks a skill or agent. New-skill creation NOT needed — all gaps were routing omissions of skills already on disk.
 
+### §1.6 Post-deep-clean reconcile (2026-06-11 — global archive executed by pak-ta-kra session, 272→123)
+
+Cross-check result: all Tier A intact. 6 liveshop-routed skills were swept; resolution:
+
+| Swept skill | Resolution |
+|---|---|
+| `shipping-and-launch` (P15) | **RESTORED** from `skills.archive/2026-06-11/dup-losers/` (Boss pre-authorized) |
+| `prompt-optimizer` (P10D) | substitute → `prompt-master` (kept) |
+| `playwright-cli` | substitute → `e2e-testing` skill + playwright MCP plugin (both kept) |
+| `triage` / `to-issues` / `to-prd` | substitute → `planning-and-task-breakdown` (kept) |
+
+`exa-search` kept globally (deep-research dependency). Archive location if anything else surfaces missing: `~/.claude/skills.archive/2026-06-11/{lang,bizops,niche,omc-noise,dup-losers,seo}` — restore = `mv` back. §2 disable plan = EXECUTED (superseded by global archive); D-batch tables above retained for history.
+
 ### Tier IGNORE — exists on disk, never relevant here (do not invoke, do not read)
 
 - **Language packs (38):** cpp\*, golang\*, rust\*, kotlin\*, swift\*, django\*, laravel\*, perl\*, springboot\*, java\*, jpa\*, android\*, flutter\*, compose\*, pytorch\*, clickhouse-io, nuxt4-patterns, foundation-models-on-device
