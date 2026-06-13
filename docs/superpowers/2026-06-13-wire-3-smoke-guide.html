@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WIRE-3 Smoke Guide · PR #154 · LiveShop Pro</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1a1d23; --muted:#5b6472;
+    --line:#e4e7ec; --brand:#2563eb; --brand-soft:#eff5ff;
+    --ok:#16a34a; --ok-soft:#ecfdf3; --warn:#d97706; --warn-soft:#fffaeb;
+    --bad:#dc2626; --bad-soft:#fef3f2; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --crit:#7c3aed; --crit-soft:#f5f0ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 "Segoe UI",system-ui,-apple-system,"Noto Sans Thai",sans-serif;}
+  .wrap{max-width:880px;margin:0 auto;padding:24px 18px 80px}
+  header.hero{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;
+    border-radius:18px;padding:26px 24px;margin-bottom:20px;box-shadow:0 8px 24px rgba(37,99,235,.18)}
+  header.hero h1{margin:0 0 6px;font-size:24px;letter-spacing:.2px}
+  header.hero p{margin:0;opacity:.92;font-size:15px}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .badge{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+    padding:4px 11px;border-radius:999px;font-size:13px}
+  /* progress */
+  .progwrap{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;margin-bottom:18px;position:sticky;top:8px;z-index:5;
+    box-shadow:0 2px 10px rgba(0,0,0,.04)}
+  .progwrap .row{display:flex;align-items:center;gap:12px}
+  .progbar{flex:1;height:10px;background:#eef1f5;border-radius:999px;overflow:hidden}
+  .progbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22c55e,#16a34a);
+    transition:width .3s}
+  .progtxt{font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .progwrap .reset{font-size:12px;color:var(--brand);background:none;border:none;cursor:pointer;text-decoration:underline}
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 4px;font-size:19px;display:flex;align-items:center;gap:9px}
+  .card h2 .num{background:var(--brand);color:#fff;width:28px;height:28px;border-radius:8px;
+    display:grid;place-items:center;font-size:15px;flex:none}
+  .card .why{color:var(--muted);font-size:14px;margin:0 0 14px}
+  .round-1 h2 .num{background:#2563eb}
+  .round-2 h2 .num{background:#16a34a}
+  .round-3 h2 .num{background:#0891b2}
+  .prep h2 .num{background:#64748b}
+  /* code */
+  code,kbd{font-family:var(--mono);font-size:13.5px}
+  kbd{background:#1a1d23;color:#e5e7eb;border-radius:5px;padding:2px 7px;font-size:12.5px;
+    box-shadow:0 1px 0 #000}
+  pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:13px 15px;overflow:auto;
+    font-family:var(--mono);font-size:13.5px;line-height:1.55;position:relative;margin:10px 0}
+  pre .copy{position:absolute;top:8px;right:8px;background:#1e293b;color:#cbd5e1;border:1px solid #334155;
+    border-radius:6px;font-size:11.5px;padding:3px 9px;cursor:pointer}
+  pre .copy:hover{background:#334155}
+  .term-tab{display:inline-block;font-size:12px;color:var(--muted);
+    background:#eef1f5;border-radius:6px;padding:1px 8px;margin-bottom:-4px}
+  /* checklist */
+  ul.chk{list-style:none;padding:0;margin:8px 0 0}
+  ul.chk li{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:10px;
+    border:1px solid var(--line);margin-bottom:8px;background:#fcfcfd;transition:background .15s}
+  ul.chk li:hover{background:var(--brand-soft)}
+  ul.chk li.done{background:var(--ok-soft);border-color:#bbf7d0}
+  ul.chk li.done .ck-text{color:#15803d}
+  ul.chk input{width:22px;height:22px;flex:none;margin-top:1px;accent-color:var(--ok);cursor:pointer}
+  .ck-text{font-size:14.5px}
+  .ck-text .n{display:inline-block;background:#e2e8f0;color:#334155;font-weight:700;
+    border-radius:6px;min-width:22px;text-align:center;padding:0 6px;margin-right:7px;font-size:13px}
+  .ck-text b{color:var(--ink)}
+  li.critical{border-color:var(--crit);background:var(--crit-soft)}
+  li.critical:hover{background:#efe7ff}
+  .tag-crit{display:inline-block;background:var(--crit);color:#fff;font-size:11px;font-weight:700;
+    border-radius:5px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+  /* callouts */
+  .note{border-left:4px solid var(--brand);background:var(--brand-soft);border-radius:0 10px 10px 0;
+    padding:11px 15px;margin:12px 0;font-size:14px}
+  .note.warn{border-color:var(--warn);background:var(--warn-soft)}
+  .note.crit{border-color:var(--crit);background:var(--crit-soft)}
+  .note .h{font-weight:700;display:block;margin-bottom:3px}
+  /* SVG figure */
+  figure{margin:14px 0;text-align:center}
+  figure svg{max-width:100%;height:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  figcaption{font-size:13px;color:var(--muted);margin-top:6px}
+  /* report builder */
+  .report{background:var(--card);border:2px solid var(--brand);border-radius:16px;padding:20px 22px;
+    box-shadow:0 6px 20px rgba(37,99,235,.1)}
+  .report h2{color:var(--brand)}
+  .verdict-out{font-family:var(--mono);font-size:14px;background:#0f172a;color:#e2e8f0;border-radius:10px;
+    padding:14px 16px;white-space:pre-wrap;min-height:48px;margin:12px 0}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap}
+  button.act{border:none;border-radius:10px;padding:11px 18px;font-size:14.5px;font-weight:600;
+    cursor:pointer;transition:transform .08s,filter .15s}
+  button.act:active{transform:scale(.97)}
+  button.pass{background:var(--ok);color:#fff}
+  button.fail{background:var(--bad);color:#fff}
+  button.copy-rep{background:var(--brand);color:#fff}
+  button.act:hover{filter:brightness(1.06)}
+  .fail-box{margin-top:12px;display:none}
+  .fail-box.show{display:block}
+  .fail-box textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;
+    font:14px/1.5 inherit;resize:vertical;min-height:70px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#16a34a;color:#fff;padding:12px 22px;border-radius:999px;font-size:14px;font-weight:600;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);transition:transform .3s;z-index:50}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  table.mini{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  table.mini td{border:1px solid var(--line);padding:7px 10px;vertical-align:top}
+  table.mini td:first-child{width:34px;text-align:center;font-weight:700;color:var(--muted)}
+  .small{font-size:12.5px;color:var(--muted)}
+  @media(max-width:560px){
+    .wrap{padding:14px 12px 70px}
+    header.hero{padding:20px 16px}
+    header.hero h1{font-size:20px}
+    .card{padding:15px 14px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>🧪 คู่มือ Smoke Test — PR #154</h1>
+    <p>V Rich WIRE-3 · board หลังธง layout-v2 · ~10–15 นาที</p>
+    <div class="badges">
+      <span class="badge">📍 local dev เท่านั้น</span>
+      <span class="badge">👁️ read-only — ห้ามแก้ข้อมูลจริง</span>
+      <span class="badge">🔒 ผม (Claude) ไม่ merge จนกว่า Boss ตอบ PASS</span>
+    </div>
+  </header>
+
+  <!-- progress -->
+  <div class="progwrap">
+    <div class="row">
+      <div class="progbar"><i id="bar"></i></div>
+      <span class="progtxt" id="ptxt">0 / 0 ข้อ</span>
+      <button class="reset" onclick="resetAll()">ล้างเครื่องหมาย</button>
+    </div>
+    <div class="small" style="margin-top:6px">ติ๊กแล้วจำได้ — ปิดหน้าเปิดใหม่ เครื่องหมายยังอยู่ (เก็บในเครื่องนี้เท่านั้น)</div>
+  </div>
+
+  <!-- overview SVG -->
+  <div class="card">
+    <h2><span class="num">i</span> ภาพรวม 3 รอบ</h2>
+    <p class="why">ทดสอบ 3 รอบ: ปิดธง → เปิดธง → ปิดกลับ. หัวใจคือรอบ 2 (เช็ค 7 จุด)</p>
+    <figure>
+      <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="flow 3 รอบ">
+        <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/></marker></defs>
+        <!-- round 1 -->
+        <rect x="20" y="50" width="200" height="100" rx="14" fill="#eff5ff" stroke="#2563eb" stroke-width="2"/>
+        <text x="120" y="80" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a8a">รอบ 1 · ปิดธง</text>
+        <text x="120" y="105" text-anchor="middle" font-size="12.5" fill="#475569">เห็น legacy เดิม</text>
+        <text x="120" y="124" text-anchor="middle" font-size="12.5" fill="#475569">board ต้องไม่โผล่</text>
+        <!-- round 2 -->
+        <rect x="280" y="35" width="200" height="130" rx="14" fill="#ecfdf3" stroke="#16a34a" stroke-width="2.5"/>
+        <text x="380" y="65" text-anchor="middle" font-size="15" font-weight="700" fill="#15803d">รอบ 2 · เปิดธง ⭐</text>
+        <text x="380" y="90" text-anchor="middle" font-size="12.5" fill="#475569">board โผล่</text>
+        <text x="380" y="109" text-anchor="middle" font-size="12.5" fill="#475569">เช็ค 7 จุด</text>
+        <text x="380" y="132" text-anchor="middle" font-size="11.5" fill="#15803d" font-weight="600">รวม DevTools Network</text>
+        <!-- round 3 -->
+        <rect x="540" y="50" width="200" height="100" rx="14" fill="#eff5ff" stroke="#0891b2" stroke-width="2"/>
+        <text x="640" y="80" text-anchor="middle" font-size="15" font-weight="700" fill="#0e7490">รอบ 3 · ปิดกลับ</text>
+        <text x="640" y="105" text-anchor="middle" font-size="12.5" fill="#475569">board หายไป</text>
+        <text x="640" y="124" text-anchor="middle" font-size="12.5" fill="#475569">เหลือ legacy</text>
+        <line x1="222" y1="100" x2="276" y2="100" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+        <line x1="482" y1="100" x2="536" y2="100" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+      </svg>
+      <figcaption>ปิด → เปิด → ปิด · พิสูจน์ว่า board ผูกกับธง สลับได้สะอาด</figcaption>
+    </figure>
+  </div>
+
+  <!-- PREP -->
+  <div class="card prep">
+    <h2><span class="num">0</span> ขั้นเตรียม (ทำครั้งเดียว)</h2>
+    <p class="why">"local dev" = เว็บตัวเดียวกับ nazhahatyai.com แต่รันในเครื่อง Boss เปิดที่ <code>localhost:3000</code> มีแต่ Boss เห็น มั่วได้ไม่กระทบลูกค้า</p>
+    <span class="term-tab">Git Bash — รันทีละบรรทัด</span>
+    <pre><button class="copy" onclick="cp(this)">copy</button>cd /c/Users/Asus/COWORK/code/liveshop-pro
+git fetch origin feat/v-rich-3-10-c-wire-3-shell-gating
+git switch -c smoke/wire-3 origin/feat/v-rich-3-10-c-wire-3-shell-gating
+npm install</pre>
+    <div class="note"><span class="h">💡 ถ้าขึ้นว่า branch <code>smoke/wire-3</code> มีอยู่แล้ว</span>
+      (เคยทำรอบก่อน) ใช้ <code>git switch smoke/wire-3</code> เฉยๆ แทนบรรทัดที่ 3</div>
+    <ul class="chk" data-grp="prep">
+      <li><input type="checkbox"><span class="ck-text"><span class="n">✓</span>branch เปลี่ยนเป็น <code>smoke/wire-3</code> แล้ว</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">✓</span><code>npm install</code> จบ ไม่มี error สีแดง</span></li>
+    </ul>
+  </div>
+
+  <!-- ROUND 1 -->
+  <div class="card round-1">
+    <h2><span class="num">1</span> รอบ 1 — ธงปิด (ค่า default จริง)</h2>
+    <p class="why">พิสูจน์ว่าถ้าไม่เปิดธง หน้าตาเหมือนเดิมเป๊ะ → production ปลอดภัย (prod ไม่ได้เปิดธง)</p>
+    <pre><button class="copy" onclick="cp(this)">copy</button>npm run dev</pre>
+    <div class="small">รอจนเห็น <code>Local: http://localhost:3000</code> (terminal จะค้างแบบนี้ = ปกติ ห้ามปิด)</div>
+    <p style="margin:12px 0 4px">เปิด Chrome → <code>http://localhost:3000/sale</code> → login admin → เช็ค:</p>
+    <ul class="chk" data-grp="r1">
+      <li><input type="checkbox"><span class="ck-text"><span class="n">1</span>เห็น panel <b>"รหัสสินค้า"</b> แบบเดิม (legacy) ครบ</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">2</span><b>ไม่เห็น</b> กล่อง "Sale Board (V Rich style) — preview"</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">3</span>หน้าตาเหมือนเดิมทุกอย่าง ไม่มีอะไรเพี้ยน</span></li>
+    </ul>
+    <div class="note"><span class="h">เสร็จรอบ 1</span> กลับไป terminal กด <kbd>Ctrl</kbd>+<kbd>C</kbd> หยุด server</div>
+  </div>
+
+  <!-- ROUND 2 -->
+  <div class="card round-2">
+    <h2><span class="num">2</span> รอบ 2 — ธงเปิด (หัวใจของการทดสอบ ⭐)</h2>
+    <p class="why">พิสูจน์ว่า board ใหม่โผล่ และเป็น <b>อ่านอย่างเดียว</b> จริง (ไม่ยิงคำสั่งแก้ข้อมูล)</p>
+    <span class="term-tab">Git Bash</span>
+    <pre><button class="copy" onclick="cp(this)">copy</button>NEXT_PUBLIC_SALE_LAYOUT_V2=true npm run dev</pre>
+    <span class="term-tab">PowerShell</span>
+    <pre><button class="copy" onclick="cp(this)">copy</button>$env:NEXT_PUBLIC_SALE_LAYOUT_V2='true'; npm run dev</pre>
+    <p style="margin:12px 0 4px">refresh <code>http://localhost:3000/sale</code> → เช็ค <b>7 จุด</b>:</p>
+    <ul class="chk" data-grp="r2">
+      <li><input type="checkbox"><span class="ck-text"><span class="n">1</span>panel "รหัสสินค้า" เดิม — <b>ยังอยู่ ไม่หาย</b></span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">2</span>กล่อง <b>"Sale Board (V Rich style) — preview"</b> โผล่เพิ่มขึ้นมา</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">3</span>คลิก <b>pill</b> (ชิปรหัสสินค้า) → drawer/รายละเอียดเปิด</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">4</span>ใน drawer — อ่านอย่างเดียว <b>ไม่มี</b>ปุ่มบันทึก/ยกเลิก/ช่องกรอก</span></li>
+      <li class="critical"><input type="checkbox"><span class="ck-text"><span class="n">5</span><b>จุดสำคัญสุด</b> DevTools Network — คลิก pill แล้ว <b>ห้ามมี POST/PUT/PATCH/DELETE</b> ไป <code>/api/</code><span class="tag-crit">CRITICAL</span> <span style="display:block;margin-top:3px" class="small">board นี้รับข้อมูลมาแล้วจาก server (ไม่ดึงเอง) — คลิก pill ปกติจะ <b>ไม่เห็น request ใหม่เลย</b> ก็ถูก. วิธีดูละเอียด ↓</span></span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">6</span>กด <kbd>F12</kbd> → Console — ไม่มี error สีแดง</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">7</span>กด <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> (มือถือ) เลือก iPhone — board ไม่ล้นจอ อ่านได้</span></li>
+    </ul>
+
+    <div class="note crit"><span class="h">🔑 วิธีดูจุดที่ 5 ให้ละเอียด (สำคัญสุด — กันแก้ข้อมูลจริงโดยไม่ตั้งใจ)</span></div>
+    <figure>
+      <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DevTools Network">
+        <rect x="10" y="10" width="700" height="230" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+        <!-- tabs -->
+        <rect x="10" y="10" width="700" height="34" rx="12" fill="#1e293b"/>
+        <text x="34" y="32" font-size="12.5" fill="#94a3b8">Elements</text>
+        <text x="110" y="32" font-size="12.5" fill="#94a3b8">Console</text>
+        <rect x="170" y="14" width="78" height="26" rx="6" fill="#2563eb"/>
+        <text x="209" y="32" font-size="12.5" fill="#fff" text-anchor="middle" font-weight="700">Network</text>
+        <!-- filter -->
+        <rect x="24" y="54" width="74" height="22" rx="11" fill="#2563eb"/>
+        <text x="61" y="69" font-size="11.5" fill="#fff" text-anchor="middle">Fetch/XHR</text>
+        <text x="120" y="69" font-size="11" fill="#64748b">← กดตรงนี้กรองให้เห็นเฉพาะ request ไป API</text>
+        <!-- header row -->
+        <line x1="24" y1="88" x2="696" y2="88" stroke="#e2e8f0"/>
+        <text x="34" y="104" font-size="12" fill="#64748b" font-weight="700">Name</text>
+        <text x="320" y="104" font-size="12" fill="#64748b" font-weight="700">Method</text>
+        <text x="460" y="104" font-size="12" fill="#64748b" font-weight="700">Status</text>
+        <!-- good rows -->
+        <text x="34" y="130" font-size="12.5" fill="#334155" font-family="monospace">/api/sale/board?date=...</text>
+        <rect x="316" y="118" width="46" height="18" rx="5" fill="#ecfdf3" stroke="#16a34a"/>
+        <text x="339" y="131" font-size="11.5" fill="#15803d" text-anchor="middle" font-weight="700">GET</text>
+        <text x="460" y="130" font-size="12" fill="#15803d">200 ✓</text>
+        <text x="34" y="156" font-size="12.5" fill="#334155" font-family="monospace">/api/sale/summary?...</text>
+        <rect x="316" y="144" width="46" height="18" rx="5" fill="#ecfdf3" stroke="#16a34a"/>
+        <text x="339" y="157" font-size="11.5" fill="#15803d" text-anchor="middle" font-weight="700">GET</text>
+        <text x="460" y="156" font-size="12" fill="#15803d">200 ✓</text>
+        <!-- bad example -->
+        <line x1="24" y1="174" x2="696" y2="174" stroke="#fecaca" stroke-dasharray="4"/>
+        <text x="34" y="196" font-size="12.5" fill="#991b1b" font-family="monospace">/api/sale/booking</text>
+        <rect x="316" y="184" width="56" height="18" rx="5" fill="#fef3f2" stroke="#dc2626"/>
+        <text x="344" y="197" font-size="11" fill="#b91c1c" text-anchor="middle" font-weight="700">POST</text>
+        <text x="385" y="196" font-size="12.5" fill="#dc2626" font-weight="700">← เห็นแบบนี้ = FAIL!</text>
+        <text x="34" y="224" font-size="12" fill="#64748b">ไม่มี request ใหม่ หรือเห็นแต่ GET = ✅ ผ่าน · เห็น POST/PUT/PATCH/DELETE ไป /api/ = ❌ FAIL</text>
+      </svg>
+      <figcaption>คลิก pill หลายอัน → ดู Method · ปกติจะไม่มี request ใหม่เลย (board รับข้อมูลมาแล้ว) · ที่ห้ามเด็ดขาดคือ POST/PUT/PATCH/DELETE</figcaption>
+    </figure>
+    <table class="mini">
+      <tr><td>1</td><td>กด <kbd>F12</kbd> เปิด DevTools</td></tr>
+      <tr><td>2</td><td>คลิกแท็บ <b>Network</b></td></tr>
+      <tr><td>3</td><td>กดปุ่ม filter <b>Fetch/XHR</b></td></tr>
+      <tr><td>4</td><td>เคลียร์รายการให้ว่างก่อน (ปุ่ม 🚫 หรือ <kbd>Ctrl</kbd>+<kbd>L</kbd>)</td></tr>
+      <tr><td>5</td><td>คลิก pill ในบอร์ดหลายอัน เปิด drawer ดู</td></tr>
+      <tr><td>6</td><td>ดูคอลัมน์ <b>Method</b>: <b style="color:var(--ok)">GET</b> = ปกติ · <b style="color:var(--bad)">POST/PUT/PATCH/DELETE</b> ไป <code>/api/</code> = FAIL</td></tr>
+    </table>
+  </div>
+
+  <!-- ROUND 3 -->
+  <div class="card round-3">
+    <h2><span class="num">3</span> รอบ 3 — ปิดธงย้อนกลับ</h2>
+    <p class="why">พิสูจน์ว่าปิดธงแล้ว board หายสะอาด (rollback ได้ทันทีแค่ปิดธง)</p>
+    <ul class="chk" data-grp="r3">
+      <li><input type="checkbox"><span class="ck-text"><span class="n">1</span>กด <kbd>Ctrl</kbd>+<kbd>C</kbd> หยุด server</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">2</span>รัน <code>npm run dev</code> ธรรมดา (ไม่มีธง)</span></li>
+      <li><input type="checkbox"><span class="ck-text"><span class="n">3</span>refresh <code>/sale</code> → board "V Rich" <b>หายไป</b> เหลือแต่ legacy เหมือนรอบ 1</span></li>
+    </ul>
+  </div>
+
+  <!-- REPORT BUILDER -->
+  <div class="report card">
+    <h2>📣 สรุปผล + copy ส่งกลับ Claude</h2>
+    <p class="why">ติ๊กครบแล้วกดปุ่ม → ได้ข้อความพร้อม copy วางกลับในแชทให้ผมจัดการต่อ</p>
+    <div class="verdict-out" id="vout">— ยังไม่ได้เลือกผล —</div>
+    <div class="btnrow">
+      <button class="act pass" onclick="mkPass()">✅ ผ่านทุกข้อ — PASS</button>
+      <button class="act fail" onclick="showFail()">❌ มีข้อไม่ผ่าน — FAIL</button>
+      <button class="act copy-rep" onclick="cpReport()">📋 Copy ข้อความ</button>
+    </div>
+    <div class="fail-box" id="failbox">
+      <p class="small" style="margin:10px 0 5px">บอกผม: ข้อไหน fail / เห็นอะไร / error ใน Console (วาง error สีแดงได้เลย)</p>
+      <textarea id="failtxt" placeholder="เช่น: ข้อ 5 — คลิก pill แล้วเห็น POST /api/sale/booking&#10;หรือ: ข้อ 2 — ไม่เห็น board เลย"></textarea>
+    </div>
+    <div class="note" style="margin-top:14px"><span class="h">⚠️ ห้ามวางในแชท</span>
+      cookie / session token / storageState / ค่าใน .env / DATABASE_URL / ข้อมูลลูกค้าจริงในภาพ — ส่งแค่ข้อความผลกับ screenshot</div>
+  </div>
+
+  <p class="small" style="text-align:center;margin-top:24px">
+    PR #154 · branch <code>feat/v-rich-3-10-c-wire-3-shell-gating</code> · ทำบน local dev เท่านั้น<br>
+    ผม (Claude) จะ merge ก็ต่อเมื่อ Boss ตอบ <code>WIRE-3 UI smoke PASS — merge approved</code> เท่านั้น
+  </p>
+</div>
+
+<div class="toast" id="toast">คัดลอกแล้ว ✓</div>
+
+<script>
+const KEY='wire3-smoke-v1';
+function load(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return{}}}
+function save(s){localStorage.setItem(KEY,JSON.stringify(s))}
+function boxId(li){return li.dataset.id}
+function initBoxes(){
+  const st=load();let i=0;
+  document.querySelectorAll('ul.chk li').forEach(li=>{
+    const id='c'+(i++);li.dataset.id=id;
+    const cb=li.querySelector('input');
+    cb.checked=!!st[id];li.classList.toggle('done',cb.checked);
+    cb.addEventListener('change',()=>{
+      const s=load();s[id]=cb.checked;save(s);
+      li.classList.toggle('done',cb.checked);updateProg();
+    });
+  });
+  updateProg();
+}
+function updateProg(){
+  const all=document.querySelectorAll('ul.chk input');
+  const done=[...all].filter(c=>c.checked).length;
+  const pct=all.length?Math.round(done/all.length*100):0;
+  document.getElementById('bar').style.width=pct+'%';
+  document.getElementById('ptxt').textContent=done+' / '+all.length+' ข้อ';
+}
+function resetAll(){
+  if(!confirm('ล้างเครื่องหมายติ๊กทั้งหมด?'))return;
+  localStorage.removeItem(KEY);
+  document.querySelectorAll('ul.chk input').forEach(c=>{c.checked=false;c.closest('li').classList.remove('done')});
+  updateProg();
+}
+function cp(btn){
+  const pre=btn.parentElement;const t=pre.innerText.replace(/^copy\n?/,'');
+  navigator.clipboard.writeText(t.trim()).then(()=>toast('คัดลอกคำสั่งแล้ว ✓'));
+}
+let verdict='';
+function mkPass(){verdict='WIRE-3 UI smoke PASS — merge approved';
+  document.getElementById('failbox').classList.remove('show');render();}
+function showFail(){document.getElementById('failbox').classList.add('show');buildFail();}
+function buildFail(){const d=document.getElementById('failtxt').value.trim();
+  verdict='WIRE-3 FAIL — '+(d||'(โปรดระบุข้อที่ไม่ผ่าน + สิ่งที่เห็น)');render();}
+document.addEventListener('input',e=>{if(e.target.id==='failtxt')buildFail()});
+function render(){document.getElementById('vout').textContent=verdict||'— ยังไม่ได้เลือกผล —';}
+function cpReport(){
+  if(!verdict){toast('เลือก PASS หรือ FAIL ก่อน');return;}
+  navigator.clipboard.writeText(verdict).then(()=>toast('คัดลอกผลแล้ว — วางในแชทได้เลย ✓'));
+}
+let tt;function toast(msg){const e=document.getElementById('toast');e.textContent=msg;
+  e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),2200);}
+initBoxes();
+</script>
+</body>
+</html>
