@@ -26,6 +26,13 @@ import {
   type SourceFilterValue,
 } from './SaleSourceFilterChips';
 import { DEFAULT_SHOP_TIMEZONE, todaySaleDate } from '@/lib/sale/sale-date';
+import { isSaleLayoutV2Enabled } from '@/lib/sale/feature-flags';
+import {
+  buildBoardViewModel,
+  type BoardBroadcastProductInput,
+  type BoardBookingInput,
+} from '@/lib/sale/build-board-view-model';
+import { SaleBoardReadOnly } from './board/SaleBoardReadOnly';
 
 /**
  * /sale workspace shell (Commit 2S — wired to read-only APIs).
@@ -302,6 +309,45 @@ export function SaleWorkspaceShell() {
   }, [bookingState, sourceFilter]);
 
   /**
+   * V Rich Stage 3.10-C WIRE-3 — flag-gated read-only board view
+   * model. Computed lazily; result only consumed when the layout-v2
+   * flag is enabled. When the flag is unset/false, the mapper still
+   * runs but the resulting object is discarded by React when the
+   * conditional render skips the board — this keeps the helper call
+   * side-effect free and consistent across renders.
+   *
+   * Reads from `productState` (BroadcastProducts already filtered by
+   * saleDate at API layer) + `bookingState` (raw, unfiltered by
+   * source — V Rich board renders ALL active bookings regardless of
+   * the inbox source filter).
+   *
+   * Per Boss Decision 2026-05-25: WIRE-3 default OFF; production
+   * UI unchanged unless Boss flips Vercel env later (preview only).
+   */
+  const layoutV2Enabled = isSaleLayoutV2Enabled();
+  const boardViewModel = useMemo(() => {
+    if (!layoutV2Enabled) return null;
+    const bps: readonly BoardBroadcastProductInput[] =
+      productState.kind === 'ready' ? productState.products : [];
+    const bookings: readonly BoardBookingInput[] =
+      bookingState.kind === 'ready'
+        ? bookingState.bookings.map((b) => ({
+            bookingId: b.bookingId,
+            broadcastProductId: b.broadcastProductId,
+            // SaleBookingRow.status is a wider union; mapper accepts
+            // only PENDING_REVIEW/CONFIRMED/CANCELLED/EXPIRED/
+            // CONVERTED_TO_ORDER which matches exactly.
+            status: b.status,
+            customerId: b.customerId,
+            customerName: b.customerName,
+            quantity: b.quantity,
+            createdAt: b.createdAt,
+          }))
+        : [];
+    return buildBoardViewModel({ broadcastProducts: bps, bookings });
+  }, [layoutV2Enabled, productState, bookingState]);
+
+  /**
    * Render priority (Tier 1.5 unified workspace, Boss 2026-05-17 spec):
    * 1. Header — title + omnichannel subtitle + admin escape link to /live-selling
    * 2. Source filter card — chips for context
@@ -408,6 +454,19 @@ export function SaleWorkspaceShell() {
           />
         </ErrorBoundarySection>
       </div>
+
+      {/* V Rich Stage 3.10-C WIRE-3 — read-only board preview behind
+          NEXT_PUBLIC_SALE_LAYOUT_V2 flag. When flag unset/false (default),
+          this block is skipped entirely and there is zero visual change.
+          When enabled in a safe environment (local .env.local /
+          Vercel preview), the read-only board renders ALONGSIDE the
+          legacy Product Codes panel for Boss visual review. No
+          mutation controls. No drag/drop. No outbound. */}
+      {layoutV2Enabled && boardViewModel !== null ? (
+        <ErrorBoundarySection>
+          <SaleBoardReadOnly viewModel={boardViewModel} />
+        </ErrorBoundarySection>
+      ) : null}
 
       {/* Secondary surface — customer detail + order conversion.
           These follow per-booking interactions; mid-priority. */}
